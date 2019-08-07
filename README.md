@@ -8,5 +8,5 @@ To install:
 pip install reconchess python-chess
 ```
 
-#Setup
+# Setup
 Set the path for the stockfish executable in `config.yaml` relative to the rbc-t2j1 directory
