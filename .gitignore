@@ -1,5 +1,5 @@
 *.json
 stockfish/
 __pycache__/
-config.yaml
+config
 replays/
