@@ -3,3 +3,4 @@ stockfish/
 __pycache__/
 config
 replays/
+.vscode
