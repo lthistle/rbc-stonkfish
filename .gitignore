@@ -2,3 +2,4 @@
 stockfish/
 __pycache__/
 config.yaml
+replays/
