@@ -4,6 +4,7 @@ import chess.engine
 import os
 import numpy as np
 import scipy
+import json
 
 STOCKFISH_ENV_VAR = 'STOCKFISH_EXECUTABLE'
 
