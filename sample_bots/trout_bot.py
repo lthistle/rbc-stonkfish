@@ -5,9 +5,6 @@ import os
 import yaml
 
 #create stockfish path environment variable (probably a better way to do this)
-home_path = os.path.join(os.path.dirname(__file__), '..')
-stockfish_path = yaml.load(open(os.path.join(home_path, 'config.yaml')))['stockfish_path']
-os.environ['STOCKFISH_EXECUTABLE'] = os.path.join(home_path, stockfish_path)
 STOCKFISH_ENV_VAR = 'STOCKFISH_EXECUTABLE'
 
 

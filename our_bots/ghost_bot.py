@@ -4,6 +4,7 @@ import os, sys
 import numpy as np
 import scipy.signal
 import random, itertools, logging
+import time
 
 #logging.basicConfig(level=logging.DEBUG)
 STOCKFISH_ENV_VAR = 'STOCKFISH_EXECUTABLE'
