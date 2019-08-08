@@ -48,6 +48,7 @@ class GhostBot(Player):
 
 	def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
 		new_states = []
+		states_set = set()
 		for state in self.states:
 			state.turn = self.opponent_color
 		if captured_my_piece:
@@ -57,9 +58,9 @@ class GhostBot(Player):
 					temp = state.copy()
 					move = chess.Move(attacker_square, capture_square)
 					temp.push(move)
-#					temp.set_piece_at(capture_square, state.piece_at(attacker_square))
-#					temp.remove_piece_at(attacker_square)
-					new_states.append(temp)
+					if str(temp) not in states_set:
+						states_set.add(str(temp))
+						new_states.append(temp)
 #			self.print_states(new_states)
 		else:
 			for state in self.states:
@@ -68,7 +69,9 @@ class GhostBot(Player):
 						continue
 					new_state = state.copy()
 					new_state.push(move)
-					new_states.append(new_state)
+					if str(new_state) not in states_set:
+						states_set.add(str(new_state))
+						new_states.append(new_state)
 		self.states = new_states
 		print("Number of states after handling opponent move: ", len(self.states))
 
@@ -89,7 +92,6 @@ class GhostBot(Player):
 				expected[square] += p*(len(self.states) - table[piece])
 
 		expected = expected.reshape(8,8)
-#		print(expected)
 		index = 0
 		maxval = -1
 		for i, j in itertools.product(np.arange(1,7),np.arange(1,7)):
@@ -98,12 +100,6 @@ class GhostBot(Player):
 				maxval = val
 				index = i * 8 + j
 				
-#		scan = np.argmax(scipy.signal.convolve2d(np.pad(expected.reshape(8, 8), ((1,)*2,)*2, 'constant'), np.array([1]*9).reshape(3, 3)))
-#		print(scan)
-#		index = scan
-#		index = scan if scan < 10 else scan - 10 if scan % 10 == 0 else scan - 11
-#		print(index)
-#		print(index)
 		return index.item()
 
 	def handle_sense_result(self, sense_result: List[Tuple[Square, Optional[chess.Piece]]]):
@@ -120,39 +116,54 @@ class GhostBot(Player):
 				confirmed_states.append(state)
 		self.states = confirmed_states
 		print("Number of states after sensing: ", len(self.states))
-
-	def eval(self, move, state):
-		self.table[move] = self.table.get(move, 0) + (1/len(self.states))*self.eval_state(new_state)
+		if len(self.states) < 10:
+			self.print_states()
 
 	def choose_move(self, move_actions: List[chess.Move], seconds_left: float) -> Optional[chess.Move]:
 		table = {}
-		blockPrint()
+		move_count = 0
+		tim = time.time()
 		for state in self.states:
 			state.turn = self.color
 			for move in state.pseudo_legal_moves:
-#				eval_thread = threading.Thread(target=self.eval, args=(move, new_state))
+				move_count += 1
+
+		time_to_analyze = max(8 / move_count, 0.05)
+		for state in self.states:
+			state.turn = self.color
+			for move in state.pseudo_legal_moves:
+				#eval_thread = threading.Thread(target=self.eval, args=(move, new_state))
 #				eval_thread.start()
 				# assuming probability is constant, may change later
 				sys.stderr = DevNull()
-				new_state = state.copy()
-				new_state.push(move)
-				new_state.turn = self.opponent_color
-				info = self.engine.analyse(new_state, chess.engine.Limit(time=0.010))
+				points = 0
+				if move.to_square == state.king(self.opponent_color):
+					points = 100000
+				else:
+					new_state = state.copy()
+					new_state.push(move)
+					new_state.turn = self.opponent_color
+					info = self.engine.analyse(new_state, chess.engine.Limit(time=time_to_analyze))
+					points = info["score"].pov(self.opponent_color).score(mate_score=50000)
 				if info["score"]:
-					table[move] = table.get(move, 0) + (1/len(self.states))*info["score"].pov(self.opponent_color).score(mate_score=100000)
+					table[move] = table.get(move, 0) - (1/len(self.states))*points
+#					print(info["score"].pov(self.opponent_color).score(mate_score=1000000))
+#					if abs(info["score"].pov(self.opponent_color).score(mate_score=100000) > 10000):
+#						print(info["score"].pov(self.opponent_color).score(mate_score=100000))
 				sys.stderr = sys.__stderr__
-#					continue
-#				print("GOT THE INFO")
 #				print(move, info["score"].pov(self.opponent_color).score())
-		enablePrint()
 #		print(table)
 		if len(table) == 0:
 			return None
-		v=list(table.values())
-		k=list(table.keys())
-		move = k[v.index(max(v))]
-		print(move)
-		return move
+		v = -float("inf")
+		best = None
+		for key in table:
+			if table[key] > v:
+				v = table[key]
+				best = key
+		print(best, v)
+		print("Time left: ", seconds_left - time.time() + tim)
+		return best
 
 	def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
 						   captured_opponent_piece: bool, capture_square: Optional[Square]):
@@ -173,19 +184,12 @@ class GhostBot(Player):
 
 	def handle_game_end(self, winner_color: Optional[Color], win_reason: Optional[WinReason],
 						game_history: GameHistory):
-		print("BET WE WON BOYS")
+		if winner_color == self.color:
+			print("BET WE WON BOYS")
+		else:
+			print("SHAFT WE LOST REEE")
 		self.engine.quit()
-	
-#	def eval_state(self, state):
-#		evaluation = self.engine.analyze(state)
-#		my_score = 0
-#		for i in PIECE_VALUE_DICT:
-#			my_score += PIECE_VALUE_DICT[i] * len(state.pieces(i,self.color))
-#		opp_score = 0
-#		for i in PIECE_VALUE_DICT:
-#			opp_score += PIECE_VALUE_DICT[i] * len(state.pieces(i,not self.color))
-#		return my_score - opp_score
-	
+		
 	def print_states(self, states=None):
 		if not states:
 			states = self.states
