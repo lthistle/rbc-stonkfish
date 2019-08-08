@@ -142,7 +142,7 @@ class GhostBot(Player):
 
         best = max(table, key=lambda move: table[move])
         print(best, table[best])
-        print("Time left: ", seconds_left - time.time() + start)
+        print("Time left: ", (seconds_left - time.time() + start)/60)
         return best
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
