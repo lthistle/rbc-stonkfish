@@ -3,7 +3,7 @@ import chess.engine
 import os, sys
 import numpy as np
 import scipy.signal
-import random, itertools, logging
+import random, itertools, logging, time
 
 #logging.basicConfig(level=logging.DEBUG)
 STOCKFISH_ENV_VAR = 'STOCKFISH_EXECUTABLE'
@@ -162,7 +162,7 @@ class GhostBot(Player):
 				v = table[key]
 				best = key
 		print(best, v)
-		print("Time left: ", seconds_left - time.time() + tim)
+		print("Time left: ", (seconds_left - time.time() + tim)/60)
 		return best
 
 	def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
