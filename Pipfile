@@ -8,6 +8,5 @@ verify_ssl = true
 [packages]
 reconchess = "*"
 python-chess = "*"
-
-[requires]
-python_version = "3.7"
+numpy = "*"
+scipy = "*"
