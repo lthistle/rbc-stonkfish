@@ -43,8 +43,14 @@ class GhostBot(Player):
         self.color = color
         self.states = [board]
         self.opponent_color = not self.color
+        self.first_turn = True
 
     def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
+        # Avoid assuming a move happened before the first turn as white
+        if self.color and self.first_turn:
+            self.first_turn = False
+            return
+
         new_states = []
         states_set = set()
 
@@ -89,7 +95,7 @@ class GhostBot(Player):
             for piece in table:
                 expected[square] += table[piece]*(len(self.states) - table[piece])/len(self.states)
 
-        return np.argmax(scipy.signal.convolve2d(expected.reshape(8, 8), FILTER)[1:-1, 1:-1])
+        return np.argmax(scipy.signal.convolve2d(expected.reshape(8, 8), FILTER)[1:-1, 1:-1]).item()
 
     def handle_sense_result(self, sense_result: List[Tuple[Square, Optional[chess.Piece]]]):
         confirmed_states = []
@@ -122,7 +128,6 @@ class GhostBot(Player):
         for state in self.states:
             for move in state.pseudo_legal_moves:
                 sys.stderr = DevNull()
-                points = 0
 
                 if move.to_square == state.king(self.opponent_color):
                     points = WIN
@@ -132,9 +137,9 @@ class GhostBot(Player):
                     temp.turn = self.opponent_color
                     info = self.engine.analyse(temp, chess.engine.Limit(time=time_to_analyze))
                     points = info["score"].pov(self.color).score(mate_score=MATE)
-                if info["score"]:
-                    # assuming probability is constant, may change later
-                    table[move] = table.get(move, 0) + points/len(self.states)
+
+                # assuming probability is constant, may change later
+                table[move] = table.get(move, 0) + points/len(self.states)
 
                 sys.stderr = sys.__stderr__
 

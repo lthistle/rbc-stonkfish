@@ -2,7 +2,6 @@ import chess.engine
 import random
 from reconchess import *
 import os
-import yaml
 
 #create stockfish path environment variable (probably a better way to do this)
 STOCKFISH_ENV_VAR = 'STOCKFISH_EXECUTABLE'
