@@ -8,11 +8,11 @@ from scipy.interpolate import interp1d
 #TODO: sliding, removing boards from sliding information, opponent can pass
 
 STOCKFISH_ENV_VAR = 'STOCKFISH_EXECUTABLE'
-UNICODE_MAP = {chess.Piece(p,c).unicode_symbol():chess.Piece(p,c).symbol() for p in range(1,7) for c in [True, False]}
+UNICODE_MAP = {chess.Piece(p, c).unicode_symbol():chess.Piece(p, c).symbol() for p in range(1, 7) for c in [True, False]}
 
 FILTER = np.array([1]*9).reshape(3, 3)
 
-MIN_TIME = 5
+MIN_TIME = 10
 MAX_TIME = 30
 MAX_MOVE_COUNT = 12000
 
@@ -23,6 +23,8 @@ LOSE = -WIN
 MATED = -MATE
 
 VERBOSE = 10
+WIN_MSG = "Bot wins!"
+LOSE_MSG = "Bot loses!"
 
 def make_board(board: chess.Board, move: chess.Move) -> chess.Board:
     """ Applies a move on a copied board. """
@@ -59,6 +61,7 @@ class GhostBot(Player):
         self.first_turn = True
 
     def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
+        # Avoid assuming a move happened before the first turn as white
         if self.color and self.first_turn:
             self.first_turn = False
             return
@@ -202,10 +205,7 @@ class GhostBot(Player):
 
     def handle_game_end(self, winner_color: Optional[Color], win_reason: Optional[WinReason],
                         game_history: GameHistory):
-        if winner_color == self.color:
-            print("BET WE WON BOYS")
-        else:
-            print("SHAFT WE LOST REEE")
+        print(WIN_MSG if winner_color == self.color else LOSE_MSG)
         self.engine.quit()
 
     def print_states(self, states=None):
