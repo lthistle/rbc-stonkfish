@@ -4,7 +4,7 @@ import chess.engine
 import numpy as np
 import scipy.signal
 from scipy.interpolate import interp1d
-
+import time
 #TODO: sliding, removing boards from sliding information, opponent can pass
 
 ### CONSTANTS ###
@@ -142,17 +142,20 @@ class GhostBot(Player):
                 points = LOSE
 
         return points
+    
+    def print_turn(self): #pretty print stuff
+        msg = "Turn #{}: {}".format(self.turn_number, 'Black' if self.turn_number % 2 == 0 else 'White')
+        print('*'*10 + msg + '*'*10)
 
     def handle_game_start(self, color: Color, board: chess.Board, opponent_name: str):
         self.color = color
         self.states = [board]
         self.opponent_color = not self.color
-        self.first_turn = True
+        self.turn_number = 1 #updated at beginning of handle_opp_move_result and at end of handle_move
 
     def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
-        # Avoid assuming a move happened before the first turn as white
-        if self.color and self.first_turn:
-            self.first_turn = False
+        if self.color and self.turn_number == 1:
+            self.print_turn()
             return
 
         new_states = []
@@ -181,9 +184,11 @@ class GhostBot(Player):
 
         self.states = new_states + ([state for state in self.states if str(state) not in states_set] if PASS else [])
         print("Number of states after handling opponent move: ", len(self.states))
+        self.turn_number += 1
+        self.print_turn()
 
-    def choose_sense(self, sense_actions: List[Square], move_actions: List[chess.Move], seconds_left: float) -> \
-            Optional[Square]:
+    def choose_sense(self, sense_actions: List[Square], move_actions: List[chess.Move], seconds_left: float) -> Optional[Square]:
+        #self.print_turn()
         expected = np.zeros((64,))
         for square in range(64):
             table = {}
@@ -195,9 +200,8 @@ class GhostBot(Player):
 
             for piece in table:
                 expected[square] += table[piece]*(len(self.states) - table[piece])/len(self.states)
-
+            
         return np.argmax(scipy.signal.convolve2d(expected.reshape(8, 8), FILTER)[1:-1, 1:-1]).item()
-
     def handle_sense_result(self, sense_result: List[Tuple[Square, Optional[chess.Piece]]]):
         confirmed_states = []
         for state in self.states:
@@ -230,7 +234,7 @@ class GhostBot(Player):
         if len(self.states) == 1:
             board = self.states[0]
             # overwrite stockfish only if we are able to take the king this move
-            for move in board.pseudo_legal_moves:
+            for move in board.legal_moves:
                 if move.to_square == board.king(self.opponent_color):
                     return move
             result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
@@ -274,6 +278,8 @@ class GhostBot(Player):
             #Request failed, so remove all the boards that allowed that move to occur
             self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))
         print("Number of states after moving: ", len(self.states))
+        self.turn_number += 1
+        self.print_turn()
 
     def handle_game_end(self, winner_color: Optional[Color], win_reason: Optional[WinReason],
                         game_history: GameHistory):
