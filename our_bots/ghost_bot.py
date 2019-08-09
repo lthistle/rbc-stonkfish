@@ -12,7 +12,7 @@ UNICODE_MAP = {chess.Piece(p, c).unicode_symbol():chess.Piece(p, c).symbol() for
 
 FILTER = np.array([1]*9).reshape(3, 3)
 
-MIN_TIME = 10
+MIN_TIME = 30
 MAX_TIME = 30
 MAX_MOVE_COUNT = 12000
 
@@ -31,6 +31,11 @@ def make_board(board: chess.Board, move: chess.Move) -> chess.Board:
     temp = board.copy()
     temp.push(move)
     return temp
+
+def time_str(t: float) -> str:
+    """ Converts a time in seconds to a formatted string. """
+    min = int(t/60)
+    return f"{min} min {int(t - 60*min)} sec"
 
 class DevNull:
     def write(self, msg):
@@ -182,8 +187,8 @@ class GhostBot(Player):
 
         best = max(table, key=lambda move: table[move])
         print(best, table[best])
-        print(f"Time left before starting calculations for current move: {seconds_left/60}")
-        print(f"Time left now: {(seconds_left - time.time() + start)/60}")
+        print(f"Time left before starting calculations for current move: {time_str(seconds_left)}")
+        print(f"Time left now: {time_str(seconds_left - time.time() + start)}")
         return best
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
