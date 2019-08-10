@@ -21,8 +21,9 @@ MAX_MOVE_COUNT = 12000
 # difference between winning on this turn and winning on the next turn
 WIN = 10**5
 MATE = WIN/2
-LOSE = -WIN
-MATED = -MATE
+LOSS_WIN_RATIO = 2
+LOSE = -WIN * LOSS_WIN_RATIO
+MATED = -MATE * LOSS_WIN_RATIO
 
 # whether the opponent is able to pass or not
 PASS = True
@@ -94,7 +95,6 @@ def time_str(t: float) -> str:
     """ Converts a time in seconds to a formatted string. """
     min = int(t/60)
     return f"{min} min {int(t - 60*min)} sec"
-
 
 class DevNull:
 
@@ -286,17 +286,14 @@ class GhostBot(Player):
                            captured_opponent_piece: bool, capture_square: Optional[Square]):
         for state in self.states:
             state.turn = self.color
+
         if taken_move is not None:
-            #Request passed, so remove all the boards that didn't allow that move to occur
             self.states = list(filter(lambda board: taken_move in board.pseudo_legal_moves, self.states))
-            #If capture occured, remove all boards that didn't have an opponent piece there
             if captured_opponent_piece:
                 self.states = list(filter(lambda board: board.color_at(capture_square) == self.opponent_color, self.states))
-            for state in self.states:
-                state.push(taken_move)
-        elif requested_move is not None:
-            #Request failed, so remove all the boards that allowed that move to occur
-            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))
+        if requested_move is not None and requested_move != taken_move:
+            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))            
+
         print("Number of states after moving: ", len(self.states))
         self.turn_number += 1
         self.print_turn()
