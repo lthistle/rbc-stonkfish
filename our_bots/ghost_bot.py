@@ -4,8 +4,8 @@ import chess.engine
 import numpy as np
 import scipy.signal
 from scipy.interpolate import interp1d
-import time
-#TODO: sliding, removing boards from sliding information, opponent can pass
+
+#TODO: sliding, removing boards from sliding information
 
 ### CONSTANTS ###
 
@@ -81,6 +81,11 @@ def make_board(board: chess.Board, move: chess.Move) -> chess.Board:
         temp.turn = not temp.turn
     return temp
 
+def set_turn(board: chess.Board, turn: bool) -> chess.Board:
+    """ Sets the turn of a board. """
+    board.turn = turn
+    return board
+
 def find_time(node_count: int) -> chess.engine.Limit:
     """ Gives the limitation on the engine per node. """
     time_func = interp1d([1, MAX_MOVE_COUNT], [MIN_TIME, MAX_TIME])
@@ -125,6 +130,11 @@ class GhostBot(Player):
     def stkfsh_eval(self, board: chess.Board, move: chess.Move, limit: chess.engine.Limit) -> float:
         """ Evaluates a move via stockfish. """
         temp = make_board(board, move)
+
+        # # probably because of turn stuff
+        # sign = 1 if temp.is_valid() else -1
+        # temp.turn = temp.turn if temp.is_valid() else not temp.turn
+
         info = self.engine.analyse(temp, limit)
         return info["score"].pov(self.color).score(mate_score=MATE)
 
@@ -142,10 +152,34 @@ class GhostBot(Player):
                 points = LOSE
 
         return points
-    
-    def print_turn(self): #pretty print stuff
+
+    def print_turn(self):
+        """ Pretty print the turn. """
         msg = "Turn #{}: {}".format(self.turn_number, 'Black' if self.turn_number % 2 == 0 else 'White')
         print('*'*10 + msg + '*'*10)
+
+    def remove_boards(self):
+        """ If there are too many boards to check in a reasonable amount of time, check the 100 most 'at-risk' """
+        if len(self.states) > 100:
+            sort_list = []
+            for x in range(len(self.states)):
+                board_to_eval = self.states[x]
+                #see if opponent's pieces are in position to attack
+                board_to_eval.turn = self.opponent_color
+                b_score = 0
+                for m in board_to_eval.legal_moves:
+                    dest = m.to_square
+                    p = board_to_eval.piece_at(dest)
+                    if p is not None:
+                        b_score += PIECE_VALS[p.piece_type]
+                sort_list.append((b_score, x))
+                #revert back to proper player's turn
+                board_to_eval.turn = self.color
+            sort_list.sort()
+            print("Analyzing 100 most at-risk boards")
+            return [self.states[sort_list[x][1]] for x in range(100)]
+
+        return self.states
 
     def handle_game_start(self, color: Color, board: chess.Board, opponent_name: str):
         self.color = color
@@ -182,13 +216,12 @@ class GhostBot(Player):
                             states_set.add(str(temp))
                             new_states.append(temp)
 
-        self.states = new_states + ([state for state in self.states if str(state) not in states_set] if PASS else [])
+        self.states = new_states + ([set_turn(state, self.color) for state in self.states if str(state) not in states_set] if PASS else [])
         print("Number of states after handling opponent move: ", len(self.states))
         self.turn_number += 1
         self.print_turn()
 
     def choose_sense(self, sense_actions: List[Square], move_actions: List[chess.Move], seconds_left: float) -> Optional[Square]:
-        #self.print_turn()
         expected = np.zeros((64,))
         for square in range(64):
             table = {}
@@ -200,8 +233,9 @@ class GhostBot(Player):
 
             for piece in table:
                 expected[square] += table[piece]*(len(self.states) - table[piece])/len(self.states)
-            
+
         return np.argmax(scipy.signal.convolve2d(expected.reshape(8, 8), FILTER)[1:-1, 1:-1]).item()
+
     def handle_sense_result(self, sense_result: List[Tuple[Square, Optional[chess.Piece]]]):
         confirmed_states = []
         for state in self.states:
@@ -234,34 +268,17 @@ class GhostBot(Player):
         if len(self.states) == 1:
             board = self.states[0]
             # overwrite stockfish only if we are able to take the king this move
-            for move in board.legal_moves:
+            for move in board.pseudo_legal_moves:
                 assert board.turn == self.color
                 if move.to_square == board.king(self.opponent_color):
                     return move
             result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
             best, score = result.move, result.info.get("score", "unknown")
         else:
-            states_to_check = [] #if too many boards to check in a reasonable amount of time, check 100 most 'at-risk'
-            if len(self.states) > 100:
-                sort_list = []
-                for x in range(len(self.states)):
-                    board_to_eval = self.states[x]
-                    board_to_eval.turn = self.opponent_color #see if opponent's pieces are in position to attack
-                    b_score = 0
-                    for m in board_to_eval.legal_moves:
-                        dest = m.to_square
-                        p = board_to_eval.piece_at(dest)
-                        if p is not None:
-                            b_score += PIECE_VALS[p.piece_type]
-                    sort_list.append((b_score, x))
-                    board_to_eval.turn = self.color #revert back to proper player's turn
-                sort_list.sort()
-                states_to_check = [self.states[sort_list[x][1]] for x in range(100)]
-                print("Analyzing 100 most at-risk boards")
-            else:
-                states_to_check = self.states
+            states = self.remove_boards()
             for move in move_actions:
-                for state in states_to_check:
+                for state in states:
+                    state.turn = self.color
                     # move is invalid and equivalent to a pass
                     move = move if move in state.pseudo_legal_moves else None
                     points = self.evaluate(state, move)
@@ -270,7 +287,7 @@ class GhostBot(Player):
                         points = self.stkfsh_eval(state, move, limit)
 
                     # assuming probability is constant, may change later
-                    table[move] = table.get(move, 0) + points/len(states_to_check)
+                    table[move] = table.get(move, 0) + points/len(states)
 
             if len(table) == 0: return
 
