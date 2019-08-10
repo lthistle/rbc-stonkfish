@@ -5,7 +5,7 @@ import numpy as np
 import scipy.signal
 from scipy.interpolate import interp1d
 
-#TODO: sliding, removing boards from sliding information
+#TODO: sliding
 
 ### CONSTANTS ###
 
@@ -304,12 +304,17 @@ class GhostBot(Player):
         for state in self.states:
             state.turn = self.color
 
+        if requested_move is not None and requested_move != taken_move:
+            #Requested move failed, so filter out any boards that allowed it to occur
+            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))            
         if taken_move is not None:
+            #Did some move, filter out any boards that didn't allow it to occur
             self.states = list(filter(lambda board: taken_move in board.pseudo_legal_moves, self.states))
             if captured_opponent_piece:
+                #Captured something, filter out any boards that didn't allow it to occur
                 self.states = list(filter(lambda board: board.color_at(capture_square) == self.opponent_color, self.states))
-        if requested_move is not None and requested_move != taken_move:
-            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))            
+            for state in self.states:
+                state.push(taken_move)
 
         print("Number of states after moving: ", len(self.states))
         self.turn_number += 1
