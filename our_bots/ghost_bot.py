@@ -11,7 +11,7 @@ import time
 
 STOCKFISH_ENV_VAR = 'STOCKFISH_EXECUTABLE'
 UNICODE_MAP = {chess.Piece(p, c).unicode_symbol():chess.Piece(p, c).symbol() for p in range(1, 7) for c in [True, False]}
-
+PIECE_VALS = {1: 1, 2: 3, 3: 3, 4: 5, 5: 9, 6: 100}
 FILTER = np.array([1]*9).reshape(3, 3)
 
 MIN_TIME = 10
@@ -235,13 +235,33 @@ class GhostBot(Player):
             board = self.states[0]
             # overwrite stockfish only if we are able to take the king this move
             for move in board.legal_moves:
+                assert board.turn == self.color
                 if move.to_square == board.king(self.opponent_color):
                     return move
             result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
             best, score = result.move, result.info.get("score", "unknown")
         else:
+            states_to_check = [] #if too many boards to check in a reasonable amount of time, check 100 most 'at-risk'
+            if len(self.states) > 100:
+                sort_list = []
+                for x in range(len(self.states)):
+                    board_to_eval = self.states[x]
+                    board_to_eval.turn = self.opponent_color #see if opponent's pieces are in position to attack
+                    b_score = 0
+                    for m in board_to_eval.legal_moves:
+                        dest = m.to_square
+                        p = board_to_eval.piece_at(dest)
+                        if p is not None:
+                            b_score += PIECE_VALS[p.piece_type]
+                    sort_list.append((b_score, x))
+                    board_to_eval.turn = self.color #revert back to proper player's turn
+                sort_list.sort()
+                states_to_check = [self.states[sort_list[x][1]] for x in range(100)]
+                print("Analyzing 100 most at-risk boards")
+            else:
+                states_to_check = self.states
             for move in move_actions:
-                for state in self.states:
+                for state in states_to_check:
                     # move is invalid and equivalent to a pass
                     move = move if move in state.pseudo_legal_moves else None
                     points = self.evaluate(state, move)
@@ -250,7 +270,7 @@ class GhostBot(Player):
                         points = self.stkfsh_eval(state, move, limit)
 
                     # assuming probability is constant, may change later
-                    table[move] = table.get(move, 0) + points/len(self.states)
+                    table[move] = table.get(move, 0) + points/len(states_to_check)
 
             if len(table) == 0: return
 
