@@ -23,8 +23,8 @@ BOARD_LIMIT = 100
 WIN = 10**5
 MATE = WIN/2
 LOSS_WIN_RATIO = 2
-LOSE = -WIN * LOSS_WIN_RATIO
-MATED = -MATE * LOSS_WIN_RATIO
+LOSE = -WIN*LOSS_WIN_RATIO
+MATED = -MATE*LOSS_WIN_RATIO
 
 # whether the opponent is able to pass or not
 PASS = True
@@ -145,6 +145,7 @@ class GhostBot(Player):
         points = None
         if move is not None and move.to_square == board.king(self.opponent_color):
             points = WIN
+            print("I CAN WIN BOYS")
         elif board.is_checkmate():
             points = LOSE
         elif board.is_check():
@@ -162,21 +163,25 @@ class GhostBot(Player):
     def actual_move(self, state, move):
         if move in state.pseudo_legal_moves or move is None:
             return move
-#        print("ILLLEGAL SLIDING MOVE")
-#        print(state.piece_at(move.from_square))
-#        print(state.piece_at(move.from_square).piece_type)
-        if state.piece_at(move.from_square) is not None and state.piece_at(move.from_square) in [3,4,5]:
-#            print("ACTUALLY AN ILLLEGAL SLIDING MOVE")
-            to_square = [move.to_square % 8, int(move.to_square / 8)]
+        if state.piece_at(move.from_square) is not None and state.piece_at(move.from_square).piece_type in [chess.BISHOP,chess.ROOK,chess.QUEEN]:
+            #Convert square to a,b array
+            to_square = [move.to_square % 8, int(move.to_square / 8)] 
+            #Convert square to a,b array
             from_square = [move.from_square % 8, int(move.from_square / 8)]
+            #Get direction/slope of sliding piece
             direction = [a - b for a,b in zip(to_square,from_square)]
+            #Set magnitude to 1 (make positive numbers 1 and negative numbers 0)
+            direction = [0 if a == 0 else 1 if a > 0 else -1 for a in direction]
             a, b = from_square[0] + direction[0], from_square[1] + direction[1]
+            #Keep adding direction to sliding piece until you run into an opponent piece
             while not state.piece_at(chess.square(a, b)) and [a,b] != to_square:
                 a,b = a + direction[0], b + direction[1]
-            print(a,b,chess.Move(from_square, chess.square(a, b)))
             if state.piece_at(chess.square(a, b)) and state.piece_at(chess.square(a, b)).color == self.opponent_color:
-                print(a,b,chess.Move(from_square, chess.square(a, b)))
-                return chess.Move(from_square, chess.square(a, b))
+#                print(state)
+#                print(direction)
+#                print(a,b,move)
+#                print(a,b,chess.Move(move.from_square, chess.square(a, b)))
+                return chess.Move(move.from_square, chess.square(a, b))
 
         return None
     
@@ -293,12 +298,20 @@ class GhostBot(Player):
             board = self.states[0]
             # overwrite stockfish only if we are able to take the king this move
             for move in board.pseudo_legal_moves:
-                assert board.turn == self.color
+                # assert board.turn == self.color
                 if move.to_square == board.king(self.opponent_color):
                     return move
-            result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
-            best, score = result.move, result.info.get("score", "unknown")
-#            best, score = chess.Move.from_uci("d8d5"), "unknown"
+
+            # weird UCI exception stuff on valid board
+            try:
+                result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
+                best, score = result.move, result.info.get("score", "unknown")
+            # default to move analysis
+            except:
+                table = {move: (self.evaluate(board, move) if self.evaluate(board, move) is not None else self.stkfsh_eval(board, move, limit))
+                         for move in board.pseudo_legal_moves}
+                best = max(table, key=lambda move: table[move])
+                score = table[best]
         else:
             states = self.remove_boards()
             for move in move_actions:
@@ -306,11 +319,11 @@ class GhostBot(Player):
                     state.turn = self.color
                     # move is invalid and equivalent to a pass
 
-                    move = self.actual_move(state, move)
-                    points = self.evaluate(state, move)
+                    new_move = self.actual_move(state, move)
+                    points = self.evaluate(state, new_move)
 
                     if points is None:
-                        points = self.stkfsh_eval(state, move, limit)
+                        points = self.stkfsh_eval(state, new_move, limit)
 
                     # assuming probability is constant, may change later
                     table[move] = table.get(move, 0) + points/len(states)
@@ -335,13 +348,14 @@ class GhostBot(Player):
 
         if requested_move is not None and requested_move != taken_move:
             #Requested move failed, so filter out any boards that allowed it to occur
-            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))            
+            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))
         if taken_move is not None:
             #Did some move, filter out any boards that didn't allow it to occur
             self.states = list(filter(lambda board: taken_move in board.pseudo_legal_moves, self.states))
             if captured_opponent_piece:
                 #Captured something, filter out any boards that didn't allow it to occur
                 self.states = list(filter(lambda board: board.color_at(capture_square) == self.opponent_color, self.states))
+
             for state in self.states:
                 state.push(taken_move)
                 
