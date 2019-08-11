@@ -22,8 +22,8 @@ MAX_MOVE_COUNT = 12000
 WIN = 10**5
 MATE = WIN/2
 LOSS_WIN_RATIO = 2
-LOSE = -WIN * LOSS_WIN_RATIO
-MATED = -MATE * LOSS_WIN_RATIO
+LOSE = -WIN*LOSS_WIN_RATIO
+MATED = -MATE*LOSS_WIN_RATIO
 
 # whether the opponent is able to pass or not
 PASS = True
@@ -269,11 +269,20 @@ class GhostBot(Player):
             board = self.states[0]
             # overwrite stockfish only if we are able to take the king this move
             for move in board.pseudo_legal_moves:
-                assert board.turn == self.color
+                # assert board.turn == self.color
                 if move.to_square == board.king(self.opponent_color):
                     return move
-            result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
-            best, score = result.move, result.info.get("score", "unknown")
+
+            # weird UCI exception stuff on valid board
+            try:
+                result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
+                best, score = result.move, result.info.get("score", "unknown")
+            # default to move analysis
+            except:
+                table = {move: (self.evaluate(board, move) if self.evaluate(board, move) is not None else self.stkfsh_eval(board, move, limit))
+                         for move in board.pseudo_legal_moves}
+                best = max(table, key=lambda move: table[move])
+                score = table[best]
         else:
             states = self.remove_boards()
             for move in move_actions:
@@ -306,13 +315,14 @@ class GhostBot(Player):
 
         if requested_move is not None and requested_move != taken_move:
             #Requested move failed, so filter out any boards that allowed it to occur
-            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))            
+            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))
         if taken_move is not None:
             #Did some move, filter out any boards that didn't allow it to occur
             self.states = list(filter(lambda board: taken_move in board.pseudo_legal_moves, self.states))
             if captured_opponent_piece:
                 #Captured something, filter out any boards that didn't allow it to occur
                 self.states = list(filter(lambda board: board.color_at(capture_square) == self.opponent_color, self.states))
+
             for state in self.states:
                 state.push(taken_move)
 

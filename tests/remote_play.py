@@ -7,6 +7,9 @@ from reconchess.scripts.rc_connect import RBCServer, ask_for_auth
 from reconchess.scripts.rc_play import UIPlayer
 from reconchess import load_player
 
+# python tests/remote_play.py --bot-path our_bots/ghost_bot.py
+# if no --bot-path arg uses human play
+
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--color', default='random', choices=['white', 'black', 'random'],
@@ -15,7 +18,9 @@ def main():
     parser.add_argument('--bot-path', help='Path to bot that should play on the server')
     args = parser.parse_args()
 
-    auth = ask_for_auth()
+    # auth = ask_for_auth()
+    # don't make repo public
+    auth = ("stonkfish", "tj.rbc2021Gang")
 
     server = RBCServer(args.server_url, auth)
 
