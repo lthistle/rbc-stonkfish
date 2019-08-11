@@ -5,8 +5,6 @@ import numpy as np
 import scipy.signal
 from scipy.interpolate import interp1d
 
-#TODO: sliding
-
 ### CONSTANTS ###
 
 STOCKFISH_ENV_VAR = 'STOCKFISH_EXECUTABLE'
@@ -94,13 +92,21 @@ def find_time(node_count: int) -> chess.engine.Limit:
     # Equivalent to (MAX_TIME - MIN_TIME)/(MAX_MOVE_COUNT - 1)*(np.arange(1, MAX_MOVE_COUNT) - 1)[node_count] + MIN_TIME
     time_to_analyze = time_func(min(node_count, MAX_MOVE_COUNT))
     time_per_node = time_to_analyze/node_count
-    print(f"{time_to_analyze:.3} seconds total, {time_per_node:.3} seconds per node")
+    vprint(f"{time_to_analyze:.3} seconds total, {time_per_node:.3} seconds per node", verbose=1)
     return chess.engine.Limit(time=time_per_node)
 
 def time_str(t: float) -> str:
     """ Converts a time in seconds to a formatted string. """
     min = int(t/60)
     return f"{min} min {int(t - 60*min)} sec"
+
+def vprint(*args, **kwargs):
+    """ Wrapper around print but with verbosity properties.
+        higher numbers -> less important. """
+    if kwargs.get("verbose", 0) <= VERBOSE:
+        if "verbose" in kwargs:
+            del kwargs["verbose"]
+        print(*args, **kwargs)
 
 class DevNull:
 
@@ -145,7 +151,6 @@ class GhostBot(Player):
         points = None
         if move is not None and move.to_square == board.king(self.opponent_color):
             points = WIN
-            print("I CAN WIN BOYS")
         elif board.is_checkmate():
             points = LOSE
         elif board.is_check():
@@ -158,35 +163,34 @@ class GhostBot(Player):
     def print_turn(self):
         """ Pretty print the turn. """
         msg = "Turn #{}: {}".format(self.turn_number, 'Black' if self.turn_number % 2 == 0 else 'White')
-        print('*'*10 + msg + '*'*10)
+        vprint('*'*10 + msg + '*'*10)
 
-    def actual_move(self, state, move):
+    def actual_move(self, state: chess.Board, move: chess.Move) -> Optional[chess.Move]:
+        """ Accounts for the "sliding" property unique to RBC chess. """
         if move in state.pseudo_legal_moves or move is None:
             return move
-        if state.piece_at(move.from_square) is not None and state.piece_at(move.from_square).piece_type in [chess.BISHOP,chess.ROOK,chess.QUEEN]:
-            #Convert square to a,b array
-            to_square = [move.to_square % 8, int(move.to_square / 8)] 
-            #Convert square to a,b array
-            from_square = [move.from_square % 8, int(move.from_square / 8)]
+
+        if state.piece_at(move.from_square) is not None and state.piece_at(move.from_square).piece_type in [chess.BISHOP, chess.ROOK, chess.QUEEN]:
+            #Convert squares to row, column array
+            to_square = [move.to_square % 8, int(move.to_square/8)]
+            from_square = [move.from_square % 8, int(move.from_square/8)]
             #Get direction/slope of sliding piece
-            direction = [a - b for a,b in zip(to_square,from_square)]
-            #Set magnitude to 1 (make positive numbers 1 and negative numbers 0)
-            direction = [0 if a == 0 else 1 if a > 0 else -1 for a in direction]
+            direction = [a - b for a, b in zip(to_square, from_square)]
+            #Return if neither vertical, horizontal, nor diagonal (must not be a slide)
+            if 0 not in direction and abs(direction[0]) != abs(direction[1]):
+                return
+            #Find the sign of the direction
+            direction = [0 if a == 0 else int(a/abs(a)) for a in direction]
             a, b = from_square[0] + direction[0], from_square[1] + direction[1]
             #Keep adding direction to sliding piece until you run into an opponent piece
-            while not state.piece_at(chess.square(a, b)) and [a,b] != to_square:
-                a,b = a + direction[0], b + direction[1]
+            while not state.piece_at(chess.square(a, b)) and [a, b] != to_square:
+                a, b = a + direction[0], b + direction[1]
+
             if state.piece_at(chess.square(a, b)) and state.piece_at(chess.square(a, b)).color == self.opponent_color:
-#                print(state)
-#                print(direction)
-#                print(a,b,move)
-#                print(a,b,chess.Move(move.from_square, chess.square(a, b)))
                 return chess.Move(move.from_square, chess.square(a, b))
 
-        return None
-    
     def remove_boards(self):
-        """ If there are too many boards to check in a reasonable amount of time, check the 100 most 'at-risk' """
+        """ If there are too many boards to check in a reasonable amount of time, check the most 'at-risk'. """
         if len(self.states) > BOARD_LIMIT:
             sort_list = []
             for x in range(len(self.states)):
@@ -203,7 +207,7 @@ class GhostBot(Player):
                 #revert back to proper player's turn
                 board_to_eval.turn = self.color
             sort_list.sort()
-            print("Analyzing 100 most at-risk boards")
+            vprint("Analyzing 100 most at-risk boards")
             return [self.states[sort_list[x][1]] for x in range(100)]
 
         return self.states
@@ -212,7 +216,8 @@ class GhostBot(Player):
         self.color = color
         self.states = [board]
         self.opponent_color = not self.color
-        self.turn_number = 1 #updated at beginning of handle_opp_move_result and at end of handle_move
+        #updated at beginning of handle_opp_move_result and at end of handle_move
+        self.turn_number = 1
 
     def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
         if self.color and self.turn_number == 1:
@@ -225,7 +230,6 @@ class GhostBot(Player):
             state.turn = self.opponent_color
 
         if captured_my_piece:
-            print("Opponent captured my piece")
             for state in self.states:
                 attackers = state.attackers(self.opponent_color, capture_square)
                 for attacker_square in attackers:
@@ -246,7 +250,7 @@ class GhostBot(Player):
             new_states += ([set_turn(state, self.color) for state in self.states if str(state) not in states_set] if PASS else [])
 
         self.states = new_states
-        print("Number of states after handling opponent move: ", len(self.states))
+        vprint("Number of states after handling opponent move: ", len(self.states), verbose=1)
         self.turn_number += 1
         self.print_turn()
 
@@ -278,19 +282,18 @@ class GhostBot(Player):
                 confirmed_states.append(state)
         self.states = confirmed_states
 
-        print(f"Number of states after sensing: {len(self.states)}")
-        if len(self.states) < VERBOSE:
-            self.print_states()
+        vprint(f"Number of states after sensing: {len(self.states)}")
+        self.print_states()
 
     def choose_move(self, move_actions: List[chess.Move], seconds_left: float) -> Optional[chess.Move]:
         table = {}
         start = time.time()
 
         # Ability to pass
-        move_actions.append(None)
+        moves = list(set(move for board in self.states for move in board.pseudo_legal_moves)) + [None]
 
-        node_count = len(move_actions)*len(self.states)
-        print(f"Number of nodes to analyze: {node_count}")
+        node_count = len(moves)*len(self.states)
+        vprint(f"Number of nodes to analyze: {node_count}", verbose=1)
         limit = find_time(node_count)
 
         # If only one board just let stockfish play it
@@ -308,13 +311,14 @@ class GhostBot(Player):
                 best, score = result.move, result.info.get("score", "unknown")
             # default to move analysis
             except:
+                vprint("Caught Stockfish error (move may not be accurate)", verbose=1)
                 table = {move: (self.evaluate(board, move) if self.evaluate(board, move) is not None else self.stkfsh_eval(board, move, limit))
                          for move in board.pseudo_legal_moves}
                 best = max(table, key=lambda move: table[move])
                 score = table[best]
         else:
             states = self.remove_boards()
-            for move in move_actions:
+            for move in moves:
                 for state in states:
                     state.turn = self.color
                     # move is invalid and equivalent to a pass
@@ -333,12 +337,9 @@ class GhostBot(Player):
             best = max(table, key=lambda move: table[move])
             score = table[best]
 
-#        for key in table:
-#            print(key, table[key])
-
-        print(best, score)
-        print(f"Time left before starting calculations for current move: {time_str(seconds_left)}")
-        print(f"Time left now: {time_str(seconds_left - time.time() + start)}")
+        vprint(best, score)
+        vprint(f"Time left before starting calculations for current move: {time_str(seconds_left)}", verbose=1)
+        vprint(f"Time left now: {time_str(seconds_left - time.time() + start)}", verbose=1)
         return best
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
@@ -358,22 +359,21 @@ class GhostBot(Player):
 
             for state in self.states:
                 state.push(taken_move)
-                
 
-        print("Number of states after moving: ", len(self.states))
+        vprint("Number of states after moving: ", len(self.states), verbose=1)
         self.turn_number += 1
         self.print_turn()
 
     def handle_game_end(self, winner_color: Optional[Color], win_reason: Optional[WinReason],
                         game_history: GameHistory):
-        print(WIN_MSG if winner_color == self.color else LOSE_MSG)
+        vprint(WIN_MSG if winner_color == self.color else LOSE_MSG)
         self.engine.quit()
 
     def print_states(self, states=None):
         if not states:
             states = self.states
         for state in states:
-            print(''.join([UNICODE_MAP.get(x,x) for x in state.unicode()]) + "\n")
+            vprint(''.join([UNICODE_MAP.get(x, x) for x in state.unicode()]) + "\n", verbose=len(self.states))
 
 CACHE = {f.__name__: {} for f in [GhostBot.stkfsh_eval, GhostBot.evaluate]}
 NARGS = {f.__name__: v for f, v in [(GhostBot.stkfsh_eval, 2)]}
