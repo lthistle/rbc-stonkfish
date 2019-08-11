@@ -170,21 +170,25 @@ class GhostBot(Player):
         if move in state.pseudo_legal_moves or move is None:
             return move
 
-        if state.piece_at(move.from_square) is not None and state.piece_at(move.from_square).piece_type in [chess.BISHOP, chess.ROOK, chess.QUEEN]:
+        piece = state.piece_at(move.from_square)
+        if piece is not None and piece.piece_type in [chess.BISHOP, chess.ROOK, chess.QUEEN]:
             #Convert squares to row, column array
             to_square = [move.to_square % 8, int(move.to_square/8)]
             from_square = [move.from_square % 8, int(move.from_square/8)]
             #Get direction/slope of sliding piece
-            direction = [a - b for a, b in zip(to_square, from_square)]
+            x, y = [a - b for a, b in zip(to_square, from_square)]
             #Return if neither vertical, horizontal, nor diagonal (must not be a slide)
-            if 0 not in direction and abs(direction[0]) != abs(direction[1]):
+            if 0 not in [x, y] and abs(x) != abs(y):
+                return
+            #Rooks can't move diagonally, bishops can't move undiagonally
+            if (abs(x) == abs(y) and piece.piece_type == chess.ROOK) or (abs(x) != abs(y) and piece.piece_type == chess.BISHOP):
                 return
             #Find the sign of the direction
-            direction = [0 if a == 0 else int(a/abs(a)) for a in direction]
-            a, b = from_square[0] + direction[0], from_square[1] + direction[1]
+            dx, dy = [0 if d == 0 else int(d/abs(d)) for d in [x, y]]
+            a, b = from_square[0] + dx, from_square[1] + dy
             #Keep adding direction to sliding piece until you run into an opponent piece
             while not state.piece_at(chess.square(a, b)) and [a, b] != to_square:
-                a, b = a + direction[0], b + direction[1]
+                a, b = a + dx, b + dy
 
             if state.piece_at(chess.square(a, b)) and state.piece_at(chess.square(a, b)).color == self.opponent_color:
                 return chess.Move(move.from_square, chess.square(a, b))
