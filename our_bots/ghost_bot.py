@@ -17,6 +17,7 @@ FILTER = np.array([1]*9).reshape(3, 3)
 MIN_TIME = 10
 MAX_TIME = 30
 MAX_MOVE_COUNT = 12000
+BOARD_LIMIT = 100
 
 # difference between winning on this turn and winning on the next turn
 WIN = 10**5
@@ -145,11 +146,11 @@ class GhostBot(Player):
         if move is not None and move.to_square == board.king(self.opponent_color):
             points = WIN
         elif board.is_checkmate():
-            points = MATED
+            points = LOSE
         elif board.is_check():
             # move that keeps the king in check, i.e. opponent can take king after this move
             if move not in board.legal_moves:
-                points = LOSE
+                points = MATED
 
         return points
 
@@ -158,9 +159,30 @@ class GhostBot(Player):
         msg = "Turn #{}: {}".format(self.turn_number, 'Black' if self.turn_number % 2 == 0 else 'White')
         print('*'*10 + msg + '*'*10)
 
+    def actual_move(self, state, move):
+        if move in state.pseudo_legal_moves or move is None:
+            return move
+#        print("ILLLEGAL SLIDING MOVE")
+#        print(state.piece_at(move.from_square))
+#        print(state.piece_at(move.from_square).piece_type)
+        if state.piece_at(move.from_square) is not None and state.piece_at(move.from_square) in [3,4,5]:
+#            print("ACTUALLY AN ILLLEGAL SLIDING MOVE")
+            to_square = [move.to_square % 8, int(move.to_square / 8)]
+            from_square = [move.from_square % 8, int(move.from_square / 8)]
+            direction = [a - b for a,b in zip(to_square,from_square)]
+            a, b = from_square[0] + direction[0], from_square[1] + direction[1]
+            while not state.piece_at(chess.square(a, b)) and [a,b] != to_square:
+                a,b = a + direction[0], b + direction[1]
+            print(a,b,chess.Move(from_square, chess.square(a, b)))
+            if state.piece_at(chess.square(a, b)) and state.piece_at(chess.square(a, b)).color == self.opponent_color:
+                print(a,b,chess.Move(from_square, chess.square(a, b)))
+                return chess.Move(from_square, chess.square(a, b))
+
+        return None
+    
     def remove_boards(self):
         """ If there are too many boards to check in a reasonable amount of time, check the 100 most 'at-risk' """
-        if len(self.states) > 100:
+        if len(self.states) > BOARD_LIMIT:
             sort_list = []
             for x in range(len(self.states)):
                 board_to_eval = self.states[x]
@@ -198,6 +220,7 @@ class GhostBot(Player):
             state.turn = self.opponent_color
 
         if captured_my_piece:
+            print("Opponent captured my piece")
             for state in self.states:
                 attackers = state.attackers(self.opponent_color, capture_square)
                 for attacker_square in attackers:
@@ -215,8 +238,9 @@ class GhostBot(Player):
                         if str(temp) not in states_set:
                             states_set.add(str(temp))
                             new_states.append(temp)
+            new_states += ([set_turn(state, self.color) for state in self.states if str(state) not in states_set] if PASS else [])
 
-        self.states = new_states + ([set_turn(state, self.color) for state in self.states if str(state) not in states_set] if PASS else [])
+        self.states = new_states
         print("Number of states after handling opponent move: ", len(self.states))
         self.turn_number += 1
         self.print_turn()
@@ -274,13 +298,15 @@ class GhostBot(Player):
                     return move
             result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
             best, score = result.move, result.info.get("score", "unknown")
+#            best, score = chess.Move.from_uci("d8d5"), "unknown"
         else:
             states = self.remove_boards()
             for move in move_actions:
                 for state in states:
                     state.turn = self.color
                     # move is invalid and equivalent to a pass
-                    move = move if move in state.pseudo_legal_moves else None
+
+                    move = self.actual_move(state, move)
                     points = self.evaluate(state, move)
 
                     if points is None:
@@ -293,6 +319,9 @@ class GhostBot(Player):
 
             best = max(table, key=lambda move: table[move])
             score = table[best]
+
+#        for key in table:
+#            print(key, table[key])
 
         print(best, score)
         print(f"Time left before starting calculations for current move: {time_str(seconds_left)}")
@@ -315,6 +344,7 @@ class GhostBot(Player):
                 self.states = list(filter(lambda board: board.color_at(capture_square) == self.opponent_color, self.states))
             for state in self.states:
                 state.push(taken_move)
+                
 
         print("Number of states after moving: ", len(self.states))
         self.turn_number += 1
