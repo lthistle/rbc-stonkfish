@@ -27,7 +27,7 @@ MATED = -MATE*LOSS_WIN_RATIO
 # whether the opponent is able to pass or not
 PASS = True
 
-VERBOSE = 10
+VERBOSE = 100
 WIN_MSG = "Bot wins!"
 LOSE_MSG = "Bot loses!"
 
@@ -143,7 +143,13 @@ class GhostBot(Player):
         # temp.turn = temp.turn if temp.is_valid() else not temp.turn
 
         info = self.engine.analyse(temp, limit)
-        return info["score"].pov(self.color).score(mate_score=MATE)
+        score = info["score"].pov(self.color)
+        if score.is_mate():
+            if score.score(mate_score=MATE) > 0:
+                return score.score(mate_score=MATE)
+            else:
+                return score.score(mate_score=-MATED)
+        return score.score()
 
     @cache
     def evaluate(self, board: chess.Board, move: chess.Move):
@@ -152,9 +158,11 @@ class GhostBot(Player):
         if move is not None and move.to_square == board.king(self.opponent_color):
             points = WIN
         elif board.is_checkmate():
+            print("We might lose oof")
             points = LOSE
         # move that keeps the king in check, i.e. opponent can take king after this move
         elif make_board(board, move).is_check():
+            print("We might lose oof")
             points = LOSE
 
         return points
@@ -164,9 +172,9 @@ class GhostBot(Player):
         msg = "Turn #{}: {}".format(self.turn_number, 'Black' if self.turn_number % 2 == 0 else 'White')
         vprint('*'*10 + msg + '*'*10)
 
-    def actual_move(self, state: chess.Board, move: chess.Move) -> Optional[chess.Move]:
+    def result(self, state: chess.Board, move: chess.Move) -> Optional[chess.Move]:
         """ Accounts for the "sliding" property unique to RBC chess. """
-        if move in self.get_moves(state) or move is None:
+        if move in state.pseudo_legal_moves or move is None:
             return move
 
         piece = state.piece_at(move.from_square)
@@ -210,6 +218,9 @@ class GhostBot(Player):
 
         return list(set(board.pseudo_legal_moves) | set(move for move in temp.pseudo_legal_moves if move.from_square == board.king(self.color)))
 
+    def get_results(self, board: chess.Board):
+        return list(set(self.result(board, move) for move in self.get_moves(board)))
+
     def remove_boards(self):
         """ If there are too many boards to check in a reasonable amount of time, check the most 'at-risk'. """
         if len(self.states) > BOARD_LIMIT:
@@ -229,7 +240,7 @@ class GhostBot(Player):
                 board_to_eval.turn = self.color
             sort_list.sort()
             vprint("Analyzing 100 most at-risk boards")
-            return [self.states[sort_list[x][1]] for x in range(100)]
+            return [self.states[sort_list[x][1]] for x in range(BOARD_LIMIT)]
 
         return self.states
 
@@ -261,7 +272,7 @@ class GhostBot(Player):
         else:
             for state in self.states:
                 #Assume these are all legal moves
-                for move in self.get_moves(state):
+                for move in self.get_results(state):
                     # Capture didn't happen this turn
                     if not state.is_capture(move):
                         temp = make_board(state, move)
@@ -323,8 +334,9 @@ class GhostBot(Player):
             # overwrite stockfish only if we are able to take the king this move
             # OR in checkmate but are able to castle out
             for move in self.get_moves(board):
+                result = self.result(board, move)
                 # assert board.turn == self.color
-                if move.to_square == board.king(self.opponent_color):
+                if result.to_square == board.king(self.opponent_color):
                     return move
                 elif board.is_checkmate() and move not in board.psuedo_legal_moves:
                     return move
@@ -336,7 +348,7 @@ class GhostBot(Player):
             # default to move analysis
             except:
                 vprint("Caught Stockfish error (move may not be accurate)", verbose=1)
-                table = {move: (self.evaluate(board, move) if self.evaluate(board, move) is not None else self.stkfsh_eval(board, move, limit))
+                table = {move: (self.evaluate(board, self.result(move)) if self.evaluate(board, self.result(move)) is not None else self.stkfsh_eval(board, self.result(move), limit))
                          for move in self.get_moves(board)}
                 best = max(table, key=lambda move: table[move])
                 score = table[best]
@@ -347,7 +359,7 @@ class GhostBot(Player):
                     state.turn = self.color
                     # move is invalid and equivalent to a pass
 
-                    new_move = self.actual_move(state, move)
+                    new_move = self.result(state, move)
                     points = self.evaluate(state, new_move)
 
                     if points is None:
@@ -373,10 +385,10 @@ class GhostBot(Player):
 
         if requested_move is not None and requested_move != taken_move:
             #Requested move failed, so filter out any boards that allowed it to occur
-            self.states = list(filter(lambda board: requested_move not in self.get_moves(board), self.states))
+            self.states = list(filter(lambda board: requested_move not in self.get_results(board), self.states))
         if taken_move is not None:
             #Did some move, filter out any boards that didn't allow it to occur
-            self.states = list(filter(lambda board: taken_move in self.get_moves(board), self.states))
+            self.states = list(filter(lambda board: taken_move in self.get_results(board), self.states))
             if captured_opponent_piece:
                 #Captured something, filter out any boards that didn't allow it to occur
                 self.states = list(filter(lambda board: board.color_at(capture_square) == self.opponent_color, self.states))
