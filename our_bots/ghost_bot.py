@@ -1,4 +1,4 @@
-import os, time, functools, logging
+import os, sys, time, functools, logging
 from reconchess import *
 import reconchess.utilities as util
 import chess.engine
@@ -19,7 +19,7 @@ MAX_NODE_COUNT = 12000
 BOARD_LIMIT = 100
 
 # difference between winning on this turn and winning on the next turn
-WIN = 10**5
+WIN = 3 * 10**3
 MATE = WIN/2
 LOSS_WIN_RATIO = 10
 LOSE = -WIN*LOSS_WIN_RATIO
@@ -30,7 +30,9 @@ PASS = True
 # whether in replay enviroment
 REPLAY = True
 
-logging.basicConfig(format="%(message)s", level=logging.DEBUG)
+logging.basicConfig(format="%(message)s")
+# logging.basicConfig(format="%(message)s", level=logging.DEBUG, filename="logging.txt")
+# logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 logging.getLogger("chess").setLevel(logging.CRITICAL)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
@@ -112,6 +114,7 @@ class GhostBot(Player):
                     STOCKFISH_ENV_VAR))
 
         # make sure there is actually a file
+        global stockfish_path
         stockfish_path = os.environ[STOCKFISH_ENV_VAR]
         if not os.path.exists(stockfish_path):
             raise ValueError('No stockfish executable found at "{}"'.format(stockfish_path))
@@ -128,8 +131,17 @@ class GhostBot(Player):
         # sign = 1 if temp.is_valid() else -1
         # temp.turn = temp.turn if temp.is_valid() else not temp.turn
 
-        info = self.engine.analyse(temp, limit)
-        score = info["score"].pov(self.color)
+        try:
+            info = self.engine.analyse(temp, limit)
+            score = info["score"].pov(self.color)
+        except:
+            print(info)
+            print(info["score"])
+            logging.error("Caught Stockfish error as " + str(self.color) + " (attempting to refresh then analyse again)")
+            self.engine = chess.engine.SimpleEngine.popen_uci(os.environ[STOCKFISH_ENV_VAR])
+            info = self.engine.analyse(temp, limit)
+            score = info["score"].pov(self.color)
+    
         if score.is_mate():
             if score.score(mate_score=MATE) > 0:
                 return score.score(mate_score=MATE)
@@ -187,6 +199,22 @@ class GhostBot(Player):
             return [self.states[sort_list[x][1]] for x in range(BOARD_LIMIT)]
 
         return self.states
+    
+    def flip_square(self, square):
+        return chess.square(7 - chess.square_file(square), 7 - chess.square_rank(square))
+    
+    #Flip white and black's perspectives on the board
+    def flip_board(self, board):
+        temp = board.copy()
+        new_map = {}
+        piece_map = temp.piece_map()
+        for square in piece_map:
+            piece = piece_map[square]
+            piece.color = not piece.color
+            square = self.flip_square(square)
+            new_map[square] = piece
+        temp.set_piece_map(new_map)
+        return temp
 
     def handle_game_start(self, color: Color, board: chess.Board, opponent_name: str):
         self.color = color
@@ -267,12 +295,10 @@ class GhostBot(Player):
 
         # Ability to pass
         moves = list(set(move for board in self.states for move in get_moves(board))) + [None]
-
+        
         node_count = len(moves)*len(self.states)
-        logging.info(f"Number of nodes to analyze: {node_count}")
         limit = find_time(node_count)
-
-        self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+        self.engine = chess.engine.SimpleEngine.popen_uci(os.environ[STOCKFISH_ENV_VAR])
         # If only one board just let stockfish play it
         if len(self.states) == 1:
             board = self.states[0]
@@ -287,17 +313,29 @@ class GhostBot(Player):
 
             # weird UCI exception stuff on valid board
             try:
-                result = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
+                #Color flipping stuff if playing as black
+                temp = board.copy()
+                if self.color == chess.BLACK:
+                    # assert self.flip_board(self.flip_board(temp)) == temp
+                    temp = self.flip_board(board)
+                    temp.turn = chess.WHITE
+                result = self.engine.play(temp, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
                 best, score = result.move, result.info.get("score", "unknown")
+                if self.color == chess.BLACK:
+                    best = chess.Move(self.flip_square(best.from_square), self.flip_square(best.to_square))
             # default to move analysis
-            except:
-                logging.error("Caught Stockfish error (move may not be accurate)")
+            except Exception as e:
+                logging.error("Caught Stockfish error as " + str(self.color) + " (move may not be accurate)")
+                logging.error("Error: " + str(e))
                 table = {move: (self.evaluate(board, move) if self.evaluate(board, move) is not None else self.stkfsh_eval(board, move, limit))
                          for move in get_moves(board)}
                 best = max(table, key=lambda move: table[move])
                 score = table[best]
         else:
             states = self.remove_boards()
+            node_count = len(moves)*len(states)
+            logging.info(f"Number of nodes to analyze: {node_count}")
+            limit = find_time(node_count)
             for move in moves:
                 for state in states:
                     state.turn = self.color
@@ -323,6 +361,7 @@ class GhostBot(Player):
 
         # clear cache
         CACHE[self.stkfsh_eval.__name__] = {}
+
         return best
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
