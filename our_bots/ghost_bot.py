@@ -153,10 +153,9 @@ class GhostBot(Player):
             points = WIN
         elif board.is_checkmate():
             points = LOSE
-        elif board.is_check():
-            # move that keeps the king in check, i.e. opponent can take king after this move
-            if make_board(board, move).is_check():
-                points = LOSE
+        # move that keeps the king in check, i.e. opponent can take king after this move
+        elif make_board(board, move).is_check():
+            points = LOSE
 
         return points
 
@@ -192,18 +191,13 @@ class GhostBot(Player):
 
             if state.piece_at(chess.square(a, b)) and state.piece_at(chess.square(a, b)).color == self.opponent_color:
                 return chess.Move(move.from_square, chess.square(a, b))
-        
+
+        # Can't castle through enemy pieces
         if piece is not None and piece.piece_type == chess.KING:
-            backrank = 0 if self.color == chess.WHITE else 7
-            to_check = []
-            if state.is_queenside_castling(move):
-                to_check = [(1,backrank), (2,backrank), (3,backrank)]
-            elif state.is_kingside_castling(move):
-                to_check = [(5,backrank), (6,backrank)]
-            
-            for file,rank in to_check:
+            rank = 0 if self.color == chess.WHITE else 7
+            for file in (range(1, 4) if state.is_queenside_castling(move) else range(5, 7)):
                 if state.piece_at(chess.square(file, rank)) is not None:
-                    return None
+                    return
 
     def get_moves(self, board: chess.Board) -> List[chess.Move]:
         """ Accounts for the ability to castle through check. """
@@ -367,7 +361,7 @@ class GhostBot(Player):
             best = max(table, key=lambda move: table[move])
             score = table[best]
 
-        vprint(f"{best} {score:.2}")
+        vprint(f"{best} {score if isinstance(score, str) else round(score, 2)}")
         vprint(f"Time left before starting calculations for current move: {time_str(seconds_left)}", verbose=1)
         vprint(f"Time left now: {time_str(seconds_left - time.time() + start)}", verbose=1)
         return best
