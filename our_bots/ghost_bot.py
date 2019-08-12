@@ -272,6 +272,7 @@ class GhostBot(Player):
         logging.info(f"Number of nodes to analyze: {node_count}")
         limit = find_time(node_count)
 
+        self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
         # If only one board just let stockfish play it
         if len(self.states) == 1:
             board = self.states[0]
