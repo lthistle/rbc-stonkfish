@@ -318,11 +318,7 @@ class GhostBot(Player):
                 for state in states:
                     state.turn = self.color
                     # move is invalid and equivalent to a pass
-
                     new_move = self.result(state, move)
-                    if move is not None:
-                        if new_move != util.slide_move(state, move):
-                            print(new_move, util.slide_move(state, move))
                     points = self.evaluate(state, new_move)
 
                     if points is None:
