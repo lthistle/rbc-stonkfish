@@ -192,6 +192,18 @@ class GhostBot(Player):
 
             if state.piece_at(chess.square(a, b)) and state.piece_at(chess.square(a, b)).color == self.opponent_color:
                 return chess.Move(move.from_square, chess.square(a, b))
+        
+        if piece is not None and piece.piece_type == chess.KING:
+            backrank = 0 if self.color == chess.WHITE else 7
+            to_check = []
+            if state.is_queenside_castling(move):
+                to_check = [(1,backrank), (2,backrank), (3,backrank)]
+            elif state.is_kingside_castling(move):
+                to_check = [(5,backrank), (6,backrank)]
+            
+            for file,rank in to_check:
+                if state.piece_at(chess.square(file, rank)) is not None:
+                    return None
 
     def get_moves(self, board: chess.Board) -> List[chess.Move]:
         """ Accounts for the ability to castle through check. """
