@@ -272,7 +272,8 @@ class GhostBot(Player):
         logging.info(f"Number of nodes to analyze: {node_count}")
         limit = find_time(node_count)
 
-        self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+        # Refresh engine
+        self.engine = chess.engine.SimpleEngine.popen_uci(os.environ[STOCKFISH_ENV_VAR])
         # If only one board just let stockfish play it
         if len(self.states) == 1:
             board = self.states[0]
@@ -321,8 +322,6 @@ class GhostBot(Player):
         logging.info(f"Time left now: {time_str(seconds_left - time.time() + start)}")
         logging.debug(f"{ {str(k): round(v, 2) for k, v in table.items()} }")
 
-        # clear cache
-        CACHE[self.stkfsh_eval.__name__] = {}
         return best
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
