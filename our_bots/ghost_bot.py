@@ -155,8 +155,8 @@ class GhostBot(Player):
             points = LOSE
         elif board.is_check():
             # move that keeps the king in check, i.e. opponent can take king after this move
-            if move not in board.legal_moves:
-                points = MATED
+            if make_board(board, move).is_check():
+                points = LOSE
 
         return points
 
@@ -167,7 +167,7 @@ class GhostBot(Player):
 
     def actual_move(self, state: chess.Board, move: chess.Move) -> Optional[chess.Move]:
         """ Accounts for the "sliding" property unique to RBC chess. """
-        if move in state.pseudo_legal_moves or move is None:
+        if move in self.get_moves(state) or move is None:
             return move
 
         piece = state.piece_at(move.from_square)
@@ -192,6 +192,17 @@ class GhostBot(Player):
 
             if state.piece_at(chess.square(a, b)) and state.piece_at(chess.square(a, b)).color == self.opponent_color:
                 return chess.Move(move.from_square, chess.square(a, b))
+
+    def get_moves(self, board: chess.Board) -> List[chess.Move]:
+        """ Accounts for the ability to castle through check. """
+        # Remove enemy pieces
+        temp = board.copy()
+        for square in chess.SQUARES:
+            piece = temp.piece_at(square)
+            if piece is not None and piece.color == self.opponent_color:
+                temp.remove_piece_at(square)
+
+        return list(set(board.pseudo_legal_moves) | set(move for move in temp.pseudo_legal_moves if move.from_square == board.king(self.color)))
 
     def remove_boards(self):
         """ If there are too many boards to check in a reasonable amount of time, check the most 'at-risk'. """
@@ -243,8 +254,8 @@ class GhostBot(Player):
                         new_states.append(temp)
         else:
             for state in self.states:
-                #Assume these are all legal moves, still need to include castling
-                for move in state.pseudo_legal_moves:
+                #Assume these are all legal moves
+                for move in self.get_moves(state):
                     # Capture didn't happen this turn
                     if not state.is_capture(move):
                         temp = make_board(state, move)
@@ -294,7 +305,7 @@ class GhostBot(Player):
         start = time.time()
 
         # Ability to pass
-        moves = list(set(move for board in self.states for move in board.pseudo_legal_moves)) + [None]
+        moves = list(set(move for board in self.states for move in self.get_moves(board))) + [None]
 
         node_count = len(moves)*len(self.states)
         vprint(f"Number of nodes to analyze: {node_count}", verbose=1)
@@ -304,9 +315,12 @@ class GhostBot(Player):
         if len(self.states) == 1:
             board = self.states[0]
             # overwrite stockfish only if we are able to take the king this move
-            for move in board.pseudo_legal_moves:
+            # OR in checkmate but are able to castle out
+            for move in self.get_moves(board):
                 # assert board.turn == self.color
                 if move.to_square == board.king(self.opponent_color):
+                    return move
+                elif board.is_checkmate() and move not in board.psuedo_legal_moves:
                     return move
 
             # weird UCI exception stuff on valid board
@@ -317,7 +331,7 @@ class GhostBot(Player):
             except:
                 vprint("Caught Stockfish error (move may not be accurate)", verbose=1)
                 table = {move: (self.evaluate(board, move) if self.evaluate(board, move) is not None else self.stkfsh_eval(board, move, limit))
-                         for move in board.pseudo_legal_moves}
+                         for move in self.get_moves(board)}
                 best = max(table, key=lambda move: table[move])
                 score = table[best]
         else:
@@ -341,7 +355,7 @@ class GhostBot(Player):
             best = max(table, key=lambda move: table[move])
             score = table[best]
 
-        vprint(best, score)
+        vprint(f"{best} {score:.2}")
         vprint(f"Time left before starting calculations for current move: {time_str(seconds_left)}", verbose=1)
         vprint(f"Time left now: {time_str(seconds_left - time.time() + start)}", verbose=1)
         return best
@@ -353,10 +367,10 @@ class GhostBot(Player):
 
         if requested_move is not None and requested_move != taken_move:
             #Requested move failed, so filter out any boards that allowed it to occur
-            self.states = list(filter(lambda board: requested_move not in board.pseudo_legal_moves, self.states))
+            self.states = list(filter(lambda board: requested_move not in self.get_moves(board), self.states))
         if taken_move is not None:
             #Did some move, filter out any boards that didn't allow it to occur
-            self.states = list(filter(lambda board: taken_move in board.pseudo_legal_moves, self.states))
+            self.states = list(filter(lambda board: taken_move in self.get_moves(board), self.states))
             if captured_opponent_piece:
                 #Captured something, filter out any boards that didn't allow it to occur
                 self.states = list(filter(lambda board: board.color_at(capture_square) == self.opponent_color, self.states))
