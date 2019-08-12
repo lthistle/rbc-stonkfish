@@ -15,18 +15,20 @@ FILTER = np.array([1]*9).reshape(3, 3)
 
 MIN_TIME = 10
 MAX_TIME = 30
-MAX_MOVE_COUNT = 12000
+MAX_NODE_COUNT = 12000
 BOARD_LIMIT = 100
 
 # difference between winning on this turn and winning on the next turn
 WIN = 10**5
 MATE = WIN/2
-LOSS_WIN_RATIO = 2
+LOSS_WIN_RATIO = 10
 LOSE = -WIN*LOSS_WIN_RATIO
 MATED = -MATE*LOSS_WIN_RATIO
 
 # whether the opponent is able to pass or not
 PASS = True
+# whether in replay enviroment
+REPLAY = True
 
 logging.basicConfig(format="%(message)s", level=logging.DEBUG)
 logging.getLogger("chess").setLevel(logging.CRITICAL)
@@ -85,11 +87,11 @@ def get_moves(board: chess.Board) -> List[chess.Move]:
 
 def find_time(node_count: int) -> chess.engine.Limit:
     """ Gives the limitation on the engine per node. """
-    time_func = interp1d([1, MAX_MOVE_COUNT], [MIN_TIME, MAX_TIME])
-    # Equivalent to (MAX_TIME - MIN_TIME)/(MAX_MOVE_COUNT - 1)*(np.arange(1, MAX_MOVE_COUNT) - 1)[node_count] + MIN_TIME
-    time_to_analyze = time_func(min(node_count, MAX_MOVE_COUNT))
+    time_func = interp1d([1, MAX_NODE_COUNT], [MIN_TIME, MAX_TIME])
+    # Equivalent to (MAX_TIME - MIN_TIME)/(MAX_NODE_COUNT - 1)*(np.arange(1, MAX_NODE_COUNT) - 1)[node_count] + MIN_TIME
+    time_to_analyze = time_func(min(node_count, MAX_NODE_COUNT))
     time_per_node = time_to_analyze/node_count
-    logging.debug(f"{time_to_analyze:.3} seconds total, {time_per_node:.3} seconds per node")
+    logging.info(f"{time_to_analyze:.3} seconds total, {time_per_node:.3} seconds per node")
     return chess.engine.Limit(time=time_per_node)
 
 def time_str(t: float) -> str:
@@ -144,7 +146,7 @@ class GhostBot(Player):
         elif board.is_checkmate():
             points = LOSE
         # move that keeps the king in check, i.e. opponent can take king after this move
-        elif make_board(board, move).is_check():
+        elif set_turn(make_board(board, move), board.turn).is_check():
             points = LOSE
 
         return points
@@ -224,7 +226,7 @@ class GhostBot(Player):
             new_states += ([set_turn(state, self.color) for state in self.states if str(state) not in states_set] if PASS else [])
 
         self.states = new_states
-        logging.debug(f"Number of states after handling opponent move: {len(self.states)}")
+        logging.info(f"Number of states after handling opponent move: {len(self.states)}")
         self.turn_number += 1
         self.print_turn()
 
@@ -267,7 +269,7 @@ class GhostBot(Player):
         moves = list(set(move for board in self.states for move in get_moves(board))) + [None]
 
         node_count = len(moves)*len(self.states)
-        logging.debug(f"Number of nodes to analyze: {node_count}")
+        logging.info(f"Number of nodes to analyze: {node_count}")
         limit = find_time(node_count)
 
         # If only one board just let stockfish play it
@@ -314,8 +316,12 @@ class GhostBot(Player):
             score = table[best]
 
         logging.info(f"{best} {score if isinstance(score, str) else round(score, 2)}")
-        logging.debug(f"Time left before starting calculations for current move: {time_str(seconds_left)}")
-        logging.debug(f"Time left now: {time_str(seconds_left - time.time() + start)}")
+        logging.info(f"Time left before starting calculations for current move: {time_str(seconds_left)}")
+        logging.info(f"Time left now: {time_str(seconds_left - time.time() + start)}")
+        logging.debug(f"{ {str(k): round(v, 2) for k, v in table.items()} }")
+
+        # clear cache
+        CACHE[self.stkfsh_eval.__name__] = {}
         return best
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
@@ -336,7 +342,7 @@ class GhostBot(Player):
             for state in self.states:
                 state.push(taken_move)
 
-        logging.debug(f"Number of states after moving: {len(self.states)}")
+        logging.info(f"Number of states after moving: {len(self.states)}")
         self.turn_number += 1
         self.print_turn()
 
