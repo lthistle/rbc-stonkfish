@@ -6,7 +6,7 @@ CORES = 4
 subprocess.run(["tmux", "kill-server"])
 subprocess.run(["git", "pull"])
 
-bot = json.load(open("bots.json"))[sys.argv[1]]
+bot = json.load(open("tests/bots.json"))[sys.argv[1]]
 print(f"Loaded bot {bot['username']}")
 
 # create temp file becuase bash is stupid with the ` character
