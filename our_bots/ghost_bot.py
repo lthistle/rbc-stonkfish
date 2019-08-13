@@ -199,6 +199,9 @@ class GhostBot(Player):
                 logging.critical("Double failure, defaulting to 0.")
                 return 0
             score = info["score"].pov(self.color)
+        except Exception:
+            self.engine = chess.engine.SimpleEngine.popen_uci(os.environ[STOCKFISH_ENV_VAR])
+            return 0
 
         if score.is_mate():
             if score.score(mate_score=MATE) > 0:
@@ -239,6 +242,7 @@ class GhostBot(Player):
         self.opponent_color = not self.color
         #updated at beginning of handle_opp_move_result and at end of handle_move
         self.turn_number = 1
+        print("Playing against:", opponent_name)
 
     def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
         if self.color and self.turn_number == 1:
