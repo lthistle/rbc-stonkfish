@@ -14,12 +14,12 @@ PIECE_VALS = {1: 1, 2: 3, 3: 3, 4: 5, 5: 9, 6: 100}
 FILTER = np.array([1]*9).reshape(3, 3)
 
 MIN_TIME = 10
-MAX_TIME = 30
+MAX_TIME = 20
 MAX_NODE_COUNT = 12000
 BOARD_LIMIT = 100
 
 # difference between winning on this turn and winning on the next turn
-WIN = 10**4
+WIN = 10**5
 MATE = WIN/2
 LOSS_WIN_RATIO = 10
 LOSE = -WIN*LOSS_WIN_RATIO
@@ -352,7 +352,7 @@ class GhostBot(Player):
                 best = max(table, key=lambda move: table[move])
                 score = table[best]
         else:
-            states = self.remove_boards()
+            states = self.remove_boards(True)
             node_count = len(moves)*len(states)
             logging.info(f"Number of nodes to analyze: {node_count}")
             limit = find_time(node_count)
