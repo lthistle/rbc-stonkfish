@@ -1,6 +1,7 @@
 import os, sys, subprocess, json
 
 subprocess.run(["tmux", "kill-server"])
+subprocess.run(["pkill", "rc-connect"])
 subprocess.run(["git", "pull"])
 
 bot = json.load(open("bots.json"))[sys.argv[1]]
