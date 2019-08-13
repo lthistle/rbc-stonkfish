@@ -9,7 +9,7 @@ from scipy.interpolate import interp1d
 ### CONSTANTS ###
 
 STOCKFISH_ENV_VAR = "STOCKFISH_EXECUTABLE"
-UNICODE_MAP = {chess.Piece(p, c).unicode_symbol():chess.Piece(p, c).symbol() for p in range(1, 7) for c in [True, False]}
+UNICODE_MAP = {chess.Piece(p, c).unicode_symbol(): chess.Piece(p, c).symbol() for p in range(1, 7) for c in [True, False]}
 PIECE_VALS = {1: 1, 2: 3, 3: 3, 4: 5, 5: 9, 6: 100}
 FILTER = np.array([1]*9).reshape(3, 3)
 
@@ -19,7 +19,7 @@ MAX_NODE_COUNT = 12000
 BOARD_LIMIT = 100
 
 # difference between winning on this turn and winning on the next turn
-WIN = 3 * 10**3
+WIN = 3*10**3
 MATE = WIN/2
 LOSS_WIN_RATIO = 10
 LOSE = -WIN*LOSS_WIN_RATIO
@@ -27,12 +27,10 @@ MATED = -MATE*LOSS_WIN_RATIO
 
 # whether the opponent is able to pass or not
 PASS = True
-# whether in replay enviroment
-REPLAY = True
+# whether in replay enviroment, what color the replay is in (to save 50% of the time)
+REPLAY, REPLAYCOLOR = True, chess.BLACK
 
-logging.basicConfig(format="%(message)s", level=logging.DEBUG)
-# logging.basicConfig(format="%(message)s", level=logging.DEBUG, filename="logging.txt")
-# logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+logging.basicConfig(format="%(levelname)s:%(name)s: %(message)s", level=logging.DEBUG)
 logging.getLogger("chess").setLevel(logging.CRITICAL)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
@@ -69,6 +67,8 @@ def cache(f):
 
     return wrapper
 
+### CHESS UTILITY ###
+
 def make_board(board: chess.Board, move: chess.Move) -> chess.Board:
     """ Applies a move on a copied board. """
     temp = board.copy()
@@ -87,6 +87,48 @@ def get_moves(board: chess.Board) -> List[chess.Move]:
     """ Accounts for the ability to castle through check. """
     return list(set(board.pseudo_legal_moves) | set(move for move in util.moves_without_opponent_pieces(board) if util.is_psuedo_legal_castle(board, move)))
 
+def result(state: chess.Board, move: chess.Move) -> Optional[chess.Move]:
+    """ Accounts for the "sliding" property unique to RBC chess. """
+    if move in get_moves(state) or move is None:
+        return move
+
+    piece = state.piece_at(move.from_square)
+    if piece is not None and piece.piece_type in [chess.BISHOP, chess.ROOK, chess.QUEEN]:
+        return util.slide_move(state, move)
+
+def flip_square(square: chess.Square) -> chess.Square:
+    """ Flips a square. """
+    return chess.square(7 - chess.square_file(square), 7 - chess.square_rank(square))
+
+def flip_board(board: chess.Board) -> chess.Board:
+    """ Flips white's and black's perspectives on the board. """
+    temp = board.copy()
+    new_map = {}
+    piece_map = temp.piece_map()
+    for square in piece_map:
+        piece = piece_map[square]
+        piece.color = not piece.color
+        square = flip_square(square)
+        new_map[square] = piece
+    temp.set_piece_map(new_map)
+    return temp
+
+### ALG SPECIFIC ###
+
+@cache
+def evaluate(board: chess.Board, move: chess.Move, color: chess.Color) -> float:
+    """ Evaluates a move via RBC-specific rules. """
+    points = None
+    if move is not None and move.to_square == board.king(not color):
+        points = WIN
+    elif board.is_checkmate():
+        points = LOSE
+    # move that keeps the king in check, i.e. opponent can take king after this move
+    elif set_turn(make_board(board, move), board.turn).is_check():
+        points = LOSE
+
+    return points
+
 def find_time(node_count: int) -> chess.engine.Limit:
     """ Gives the limitation on the engine per node. """
     time_func = interp1d([1, MAX_NODE_COUNT], [MIN_TIME, MAX_TIME])
@@ -96,10 +138,22 @@ def find_time(node_count: int) -> chess.engine.Limit:
     logging.info(f"{time_to_analyze:.3} seconds total, {time_per_node:.3} seconds per node")
     return chess.engine.Limit(time=time_per_node)
 
+### FORMATTING ###
+
+def print_turn(turn: int) -> None:
+    """ Pretty print the turn. """
+    msg = "Turn #{}: {}".format(turn, "Black" if turn % 2 == 0 else "White")
+    logging.info("*"*10 + msg + "*"*10)
+
 def time_str(t: float) -> str:
     """ Converts a time in seconds to a formatted string. """
     min = int(t/60)
     return f"{min} min {int(t - 60*min)} sec"
+
+def print_states(boards: List[chess.Board]) -> None:
+    if len(boards) < VERBOSE:
+        for board in boards:
+            logging.debug("\n" + "".join([UNICODE_MAP.get(x, x) for x in board.unicode()]) + "\n")
 
 
 class GhostBot(Player):
@@ -114,7 +168,6 @@ class GhostBot(Player):
                     STOCKFISH_ENV_VAR))
 
         # make sure there is actually a file
-        global stockfish_path
         stockfish_path = os.environ[STOCKFISH_ENV_VAR]
         if not os.path.exists(stockfish_path):
             raise ValueError('No stockfish executable found at "{}"'.format(stockfish_path))
@@ -134,15 +187,16 @@ class GhostBot(Player):
         try:
             info = self.engine.analyse(temp, limit)
             score = info["score"].pov(self.color)
-        except:
-            print(info)
-            print(info["score"])
+        except (IndexError, ValueError):
             logging.error("Caught Stockfish error as " + str(self.color) + " (attempting to refresh then analyse again)")
-            # Refresh engine and retry, should work. If not, IDK what to do
+            # Refresh engine and retry, should work. If not, default to 0.
             self.engine = chess.engine.SimpleEngine.popen_uci(os.environ[STOCKFISH_ENV_VAR])
             info = self.engine.analyse(temp, limit)
+            if "score" not in info:
+                logging.critical("Double failure, defaulting to 0.")
+                return 0
             score = info["score"].pov(self.color)
-    
+
         if score.is_mate():
             if score.score(mate_score=MATE) > 0:
                 return score.score(mate_score=MATE)
@@ -150,35 +204,7 @@ class GhostBot(Player):
                 return score.score(mate_score=-MATED)
         return score.score()
 
-    @cache
-    def evaluate(self, board: chess.Board, move: chess.Move):
-        """ Evaluates a move via RBC-specific rules. """
-        points = None
-        if move is not None and move.to_square == board.king(self.opponent_color):
-            points = WIN
-        elif board.is_checkmate():
-            points = LOSE
-        # move that keeps the king in check, i.e. opponent can take king after this move
-        elif set_turn(make_board(board, move), board.turn).is_check():
-            points = LOSE
-
-        return points
-
-    def print_turn(self):
-        """ Pretty print the turn. """
-        msg = "Turn #{}: {}".format(self.turn_number, 'Black' if self.turn_number % 2 == 0 else 'White')
-        logging.info('*'*10 + msg + '*'*10)
-
-    def result(self, state: chess.Board, move: chess.Move) -> Optional[chess.Move]:
-        """ Accounts for the "sliding" property unique to RBC chess. """
-        if move in get_moves(state) or move is None:
-            return move
-
-        piece = state.piece_at(move.from_square)
-        if piece is not None and piece.piece_type in [chess.BISHOP, chess.ROOK, chess.QUEEN]:
-            return util.slide_move(state, move)
-
-    def remove_boards(self):
+    def remove_boards(self, use_stockfish: bool=False) -> List[chess.Board]:
         """ If there are too many boards to check in a reasonable amount of time, check the most 'at-risk'. """
         if len(self.states) > BOARD_LIMIT:
             sort_list = []
@@ -197,25 +223,12 @@ class GhostBot(Player):
                 board_to_eval.turn = self.color
             sort_list.sort()
             logging.warning(f"Analyzing the {BOARD_LIMIT} most at-risk boards")
+
+            if use_stockfish:
+                return sorted(self.states, key=lambda board: self.stkfsh_eval(set_turn(board, self.opponent_color), None, chess.engine.Limit(depth=0)))
             return [self.states[sort_list[x][1]] for x in range(BOARD_LIMIT)]
 
         return self.states
-    
-    def flip_square(self, square):
-        return chess.square(7 - chess.square_file(square), 7 - chess.square_rank(square))
-    
-    #Flip white and black's perspectives on the board
-    def flip_board(self, board):
-        temp = board.copy()
-        new_map = {}
-        piece_map = temp.piece_map()
-        for square in piece_map:
-            piece = piece_map[square]
-            piece.color = not piece.color
-            square = self.flip_square(square)
-            new_map[square] = piece
-        temp.set_piece_map(new_map)
-        return temp
 
     def handle_game_start(self, color: Color, board: chess.Board, opponent_name: str):
         self.color = color
@@ -226,7 +239,7 @@ class GhostBot(Player):
 
     def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
         if self.color and self.turn_number == 1:
-            self.print_turn()
+            print_turn(self.turn_number)
             return
 
         new_states = []
@@ -257,7 +270,7 @@ class GhostBot(Player):
         self.states = new_states
         logging.info(f"Number of states after handling opponent move: {len(self.states)}")
         self.turn_number += 1
-        self.print_turn()
+        print_turn(self.turn_number)
 
     def choose_sense(self, sense_actions: List[Square], move_actions: List[chess.Move], seconds_left: float) -> Optional[Square]:
         expected = np.zeros((64,))
@@ -288,17 +301,18 @@ class GhostBot(Player):
         self.states = confirmed_states
 
         logging.info(f"Number of states after sensing: {len(self.states)}")
-        self.print_states()
+        print_states(self.states)
 
     def choose_move(self, move_actions: List[chess.Move], seconds_left: float) -> Optional[chess.Move]:
+        # skip analyzing if in replay and colors don't match
+        if REPLAY and self.turn_number % 2 != REPLAYCOLOR:
+            return
+
         table = {}
         start = time.time()
 
         # Ability to pass
         moves = list(set(move for board in self.states for move in get_moves(board))) + [None]
-        
-        node_count = len(moves)*len(self.states)
-        limit = find_time(node_count)
 
         # Refresh engine
         self.engine = chess.engine.SimpleEngine.popen_uci(os.environ[STOCKFISH_ENV_VAR])
@@ -319,19 +333,19 @@ class GhostBot(Player):
                 #Color flipping stuff if playing as black
                 temp = board.copy()
                 if self.color == chess.BLACK:
-                    # assert self.flip_board(self.flip_board(temp)) == temp
-                    temp = self.flip_board(board)
+                    # assert flip_board(flip_board(temp)) == temp
+                    temp = flip_board(board)
                     temp.turn = chess.WHITE
-                result = self.engine.play(temp, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
-                best, score = result.move, result.info.get("score", "unknown")
+                r = self.engine.play(temp, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
+                best, score = r.move, r.info.get("score", "unknown")
                 if self.color == chess.BLACK:
-                    best = chess.Move(self.flip_square(best.from_square), self.flip_square(best.to_square))
+                    best = chess.Move(flip_square(best.from_square), flip_square(best.to_square))
             # default to move analysis
             except Exception as e:
                 logging.error("Caught Stockfish error as " + str(self.color) + " (move may not be accurate)")
                 logging.error("Error: " + str(e))
-                table = {move: (self.evaluate(board, move) if self.evaluate(board, move) is not None else self.stkfsh_eval(board, move, limit))
-                         for move in get_moves(board)}
+                table = {move: (evaluate(board, move, self.color) if evaluate(board, move, self.color) is not None else self.stkfsh_eval(board, move, limit))
+                         for move in moves}
                 best = max(table, key=lambda move: table[move])
                 score = table[best]
         else:
@@ -339,12 +353,13 @@ class GhostBot(Player):
             node_count = len(moves)*len(states)
             logging.info(f"Number of nodes to analyze: {node_count}")
             limit = find_time(node_count)
+
             for move in moves:
                 for state in states:
                     state.turn = self.color
                     # move is invalid and equivalent to a pass
-                    new_move = self.result(state, move)
-                    points = self.evaluate(state, new_move)
+                    new_move = result(state, move)
+                    points = evaluate(state, new_move, self.color)
 
                     if points is None:
                         points = self.stkfsh_eval(state, new_move, limit)
@@ -384,19 +399,12 @@ class GhostBot(Player):
 
         logging.info(f"Number of states after moving: {len(self.states)}")
         self.turn_number += 1
-        self.print_turn()
+        print_turn(self.turn_number)
 
     def handle_game_end(self, winner_color: Optional[Color], win_reason: Optional[WinReason],
                         game_history: GameHistory):
         logging.info(WIN_MSG if winner_color == self.color else LOSE_MSG)
         self.engine.quit()
 
-    def print_states(self, states=None):
-        if not states:
-            states = self.states
-        if len(states) < VERBOSE:
-            for state in states:
-                logging.debug("".join([UNICODE_MAP.get(x, x) for x in state.unicode()]) + "\n")
-
-CACHE = {f.__name__: {} for f in [GhostBot.stkfsh_eval, GhostBot.evaluate]}
+CACHE = {f.__name__: {} for f in [GhostBot.stkfsh_eval, evaluate]}
 NARGS = {f.__name__: v for f, v in [(GhostBot.stkfsh_eval, 2)]}
