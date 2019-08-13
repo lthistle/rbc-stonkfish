@@ -53,6 +53,11 @@ export STOCKFISH_EXECUTABLE=/path_to_stockfish
    - chopin
    - ganondorf
 
+"C" bot
+
+- Username: StonkFishv2
+- Password: "tj.rbc2021Gang"
+
 All of the CSL computers have roughly the same specifications:
  - CPU(s): 4
  - Model name: Intel(R) Core(TM) i5-4590 CPU @ 3.30GHz
