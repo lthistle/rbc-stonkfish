@@ -30,10 +30,11 @@ PASS = True
 # whether in replay enviroment, what color the replay is in (to save 50% of the time)
 REPLAY, REPLAYCOLOR = False, chess.BLACK
 
-logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.DEBUG)
-# logging.basicConfig(format="%(message)s", level=logging.INFO)
+# logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.DEBUG)
+logging.basicConfig(format="%(message)s", level=logging.DEBUG)
 logging.getLogger("chess").setLevel(logging.CRITICAL)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.DEBUG)
 # logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
 VERBOSE = 10
@@ -155,8 +156,8 @@ def time_str(t: float) -> str:
 def print_states(boards: List[chess.Board]) -> None:
     if len(boards) < VERBOSE:
         for board in boards:
+            logging.debug(board.board_fen())
             logging.debug("\n" + "".join([UNICODE_MAP.get(x, x) for x in board.unicode()]) + "\n")
-
 
 class GhostBot(Player):
 
@@ -185,7 +186,7 @@ class GhostBot(Player):
         # # probably because of turn stuff
         # sign = 1 if temp.is_valid() else -1
         # temp.turn = temp.turn if temp.is_valid() else not temp.turn
-
+        temp.clear_stack()
         try:
             info = self.engine.analyse(temp, limit)
             score = info["score"].pov(self.color)
@@ -338,6 +339,7 @@ class GhostBot(Player):
                     # assert flip_board(flip_board(temp)) == temp
                     temp = flip_board(board)
                     temp.turn = chess.WHITE
+                temp.clear_stack()
                 r = self.engine.play(temp, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
                 best, score = r.move, r.info.get("score", "unknown")
                 if self.color == chess.BLACK:
