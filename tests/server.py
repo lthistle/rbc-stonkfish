@@ -1,5 +1,8 @@
 import os, sys, subprocess, json
 
+# number of CPU cores on the computer
+CORES = 4
+
 subprocess.run(["tmux", "kill-server"])
 subprocess.run(["git", "pull"])
 
@@ -10,7 +13,7 @@ print(f"Loaded bot {bot['username']}")
 with open("temp.sh", "w") as f:
     f.write("export STOCKFISH_EXECUTABLE=~/stockfish-10-linux/Linux/stockfish_10_x64 \n")
     f.write("pkill rc-connect \n")
-    f.write(f"~/.local/bin/rc-connect --username {bot['username']} --password \"{bot['password']}\" {bot['path']} --max-concurrent-games 1")
+    f.write(f"~/.local/bin/rc-connect --username {bot['username']} --password \"{bot['password']}\" {bot['path']} --max-concurrent-games {CORES}")
 
 for computer in bot["computers"]:
     if len(sys.argv) > 2 and sys.argv[2] == "kill":

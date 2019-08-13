@@ -53,6 +53,12 @@ export STOCKFISH_EXECUTABLE=/path_to_stockfish
    - chopin
    - ganondorf
 
+All of the CSL computers have roughly the same specifications:
+ - CPU(s): 4
+ - Model name: Intel(R) Core(TM) i5-4590 CPU @ 3.30GHz
+ - CPU max MHz: 3700
+ - CPU min MHz: 800
+
 ### Manual Setup
   
 1. ssh into remote.tjhsst.edu
