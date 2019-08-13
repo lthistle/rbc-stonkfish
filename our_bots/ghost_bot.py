@@ -14,7 +14,7 @@ PIECE_VALS = {1: 1, 2: 3, 3: 3, 4: 5, 5: 9, 6: 100}
 FILTER = np.array([1]*9).reshape(3, 3)
 
 MIN_TIME = 10
-MAX_TIME = 30
+MAX_TIME = 25
 MAX_NODE_COUNT = 12000
 BOARD_LIMIT = 100
 
@@ -28,11 +28,13 @@ MATED = -MATE*LOSS_WIN_RATIO
 # whether the opponent is able to pass or not
 PASS = True
 # whether in replay enviroment, what color the replay is in (to save 50% of the time)
-REPLAY, REPLAYCOLOR = True, chess.BLACK
+REPLAY, REPLAYCOLOR = False, chess.BLACK
 
-logging.basicConfig(format="%(levelname)s:%(name)s: %(message)s", level=logging.DEBUG)
+#logging.basicConfig(format="%(levelname)s:%(name)s: %(message)s", level=logging.DEBUG)
+logging.basicConfig(format="%(message)s", level=logging.INFO)
 logging.getLogger("chess").setLevel(logging.CRITICAL)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
 VERBOSE = 10
 WIN_MSG = "Bot wins!"
@@ -344,6 +346,8 @@ class GhostBot(Player):
             except Exception as e:
                 logging.error("Caught Stockfish error as " + str(self.color) + " (move may not be accurate)")
                 logging.error("Error: " + str(e))
+                node_count = len(move_actions)
+                limit = find_time(node_count)
                 table = {move: (evaluate(board, move, self.color) if evaluate(board, move, self.color) is not None else self.stkfsh_eval(board, move, limit))
                          for move in moves}
                 best = max(table, key=lambda move: table[move])
@@ -376,7 +380,6 @@ class GhostBot(Player):
         logging.info(f"Time left before starting calculations for current move: {time_str(seconds_left)}")
         logging.info(f"Time left now: {time_str(seconds_left - time.time() + start)}")
         logging.debug(f"{ {str(k): round(v, 2) for k, v in table.items()} }")
-
         return best
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
