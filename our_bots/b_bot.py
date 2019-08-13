@@ -135,7 +135,7 @@ def find_time(node_count: int) -> chess.engine.Limit:
     """ Gives the limitation on the engine per node. """
     time_func = interp1d([1, MAX_NODE_COUNT], [MIN_TIME, MAX_TIME])
     # Equivalent to (MAX_TIME - MIN_TIME)/(MAX_NODE_COUNT - 1)*(np.arange(1, MAX_NODE_COUNT) - 1)[node_count] + MIN_TIME
-    time_to_analyze = time_func(min(node_count, MAX_NODE_COUNT))
+    time_to_analyze = time_func(min(node_count, MAX_NODE_COUNT)).item()
     time_per_node = time_to_analyze/node_count
     logging.info(f"{time_to_analyze:.3} seconds total, {time_per_node:.3} seconds per node")
     return chess.engine.Limit(time=time_per_node)
