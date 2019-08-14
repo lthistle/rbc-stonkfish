@@ -30,7 +30,7 @@ PASS = True
 # whether in replay enviroment, what color the replay is in (to save 50% of the time)
 REPLAY, REPLAYCOLOR = False, chess.BLACK
 
-logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.DEBUG)
+logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.CRITICAL)
 logging.getLogger("urllib3.connectionpool").setLevel(logging.DEBUG)
 
 fh = logging.FileHandler("log.log")
