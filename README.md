@@ -84,3 +84,6 @@ All of the CSL computers have roughly the same specifications:
 3. Run `python tests/server.py A`
 4. (Optional): ssh into the other gateway
 5. Run `python tests/server.py B`
+
+Note that `tmux kill-server` does *not* kill the `rc-connect` processes for some reason.
+Instead, use `pkill rc-connect` to end the connections.

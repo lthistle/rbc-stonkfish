@@ -30,12 +30,21 @@ PASS = True
 # whether in replay enviroment, what color the replay is in (to save 50% of the time)
 REPLAY, REPLAYCOLOR = False, chess.BLACK
 
-# logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.DEBUG)
-logging.basicConfig(format="%(message)s", level=logging.DEBUG)
-logging.getLogger("chess").setLevel(logging.CRITICAL)
-logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.DEBUG)
 logging.getLogger("urllib3.connectionpool").setLevel(logging.DEBUG)
-# logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
+
+fh = logging.FileHandler("log.log")
+formatter = logging.Formatter("%(message)s")
+fh.setFormatter(formatter)
+
+ch = logging.StreamHandler()
+ch.setFormatter(formatter)
+
+logger = logging.getLogger("StonkFish")
+logger.addHandler(fh)
+logger.addHandler(ch)
+logger.setLevel(logging.DEBUG)
+logger.propagate = False
 
 VERBOSE = 10
 WIN_MSG = "Bot wins!"
@@ -138,7 +147,7 @@ def find_time(node_count: int) -> chess.engine.Limit:
     # Equivalent to (MAX_TIME - MIN_TIME)/(MAX_NODE_COUNT - 1)*(np.arange(1, MAX_NODE_COUNT) - 1)[node_count] + MIN_TIME
     time_to_analyze = time_func(min(node_count, MAX_NODE_COUNT)).item()
     time_per_node = time_to_analyze/node_count
-    logging.info(f"{time_to_analyze:.3} seconds total, {time_per_node:.3} seconds per node")
+    logger.info(f"{time_to_analyze:.3} seconds total, {time_per_node:.3} seconds per node")
     return chess.engine.Limit(time=time_per_node)
 
 ### FORMATTING ###
@@ -146,7 +155,7 @@ def find_time(node_count: int) -> chess.engine.Limit:
 def print_turn(turn: int) -> None:
     """ Pretty print the turn. """
     msg = "Turn #{}: {}".format(turn, "Black" if turn % 2 == 0 else "White")
-    logging.info("*"*10 + msg + "*"*10)
+    logger.info("*"*10 + msg + "*"*10)
 
 def time_str(t: float) -> str:
     """ Converts a time in seconds to a formatted string. """
@@ -156,8 +165,8 @@ def time_str(t: float) -> str:
 def print_states(boards: List[chess.Board]) -> None:
     if len(boards) < VERBOSE:
         for board in boards:
-            logging.debug(board.board_fen())
-            logging.debug("\n" + "".join([UNICODE_MAP.get(x, x) for x in board.unicode()]) + "\n")
+            logger.debug(board.board_fen())
+            logger.debug("\n" + "".join([UNICODE_MAP.get(x, x) for x in board.unicode()]) + "\n")
 
 class GhostBot(Player):
 
@@ -191,12 +200,12 @@ class GhostBot(Player):
             info = self.engine.analyse(temp, limit)
             score = info["score"].pov(self.color)
         except (IndexError, ValueError):
-            logging.error("Caught Stockfish error as " + str(self.color) + " (attempting to refresh then analyse again)")
+            logger.error("Caught Stockfish error as " + str(self.color) + " (attempting to refresh then analyse again)")
             # Refresh engine and retry, should work. If not, default to 0.
             self.engine = chess.engine.SimpleEngine.popen_uci(os.environ[STOCKFISH_ENV_VAR])
             info = self.engine.analyse(temp, limit)
             if "score" not in info:
-                logging.critical("Double failure, defaulting to 0.")
+                logger.critical("Double failure, defaulting to 0.")
                 return 0
             score = info["score"].pov(self.color)
         except Exception:
@@ -228,7 +237,7 @@ class GhostBot(Player):
                 #revert back to proper player's turn
                 board_to_eval.turn = self.color
             sort_list.sort()
-            logging.warning(f"Analyzing the {BOARD_LIMIT} most at-risk boards")
+            logger.warning(f"Analyzing the {BOARD_LIMIT} most at-risk boards")
 
             if use_stockfish:
                 return sorted(self.states, key=lambda board: self.stkfsh_eval(set_turn(board, self.opponent_color), None, chess.engine.Limit(depth=0)))
@@ -242,7 +251,7 @@ class GhostBot(Player):
         self.opponent_color = not self.color
         #updated at beginning of handle_opp_move_result and at end of handle_move
         self.turn_number = 1
-        logging.info(f"Playing against: {opponent_name}")
+        logger.info(f"Playing against: {opponent_name}")
 
     def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
         if self.color and self.turn_number == 1:
@@ -275,7 +284,7 @@ class GhostBot(Player):
             new_states += ([set_turn(state, self.color) for state in self.states if str(state) not in states_set] if PASS else [])
 
         self.states = new_states
-        logging.info(f"Number of states after handling opponent move: {len(self.states)}")
+        logger.info(f"Number of states after handling opponent move: {len(self.states)}")
         self.turn_number += 1
         print_turn(self.turn_number)
 
@@ -307,7 +316,7 @@ class GhostBot(Player):
                 confirmed_states.append(state)
         self.states = confirmed_states
 
-        logging.info(f"Number of states after sensing: {len(self.states)}")
+        logger.info(f"Number of states after sensing: {len(self.states)}")
         print_states(self.states)
 
     def choose_move(self, move_actions: List[chess.Move], seconds_left: float) -> Optional[chess.Move]:
@@ -350,8 +359,8 @@ class GhostBot(Player):
                     best = chess.Move(flip_square(best.from_square), flip_square(best.to_square))
             # default to move analysis
             except Exception as e:
-                logging.error("Caught Stockfish error as " + str(self.color) + " (move may not be accurate)")
-                logging.error("Error: " + str(e))
+                logger.error("Caught Stockfish error as " + str(self.color) + " (move may not be accurate)")
+                logger.error("Error: " + str(e))
                 limit = find_time(len(moves))
                 table = {move: (evaluate(board, move, self.color) if evaluate(board, move, self.color) is not None else self.stkfsh_eval(board, move, limit))
                          for move in moves}
@@ -360,7 +369,7 @@ class GhostBot(Player):
         else:
             states = self.remove_boards()
             node_count = len(moves)*len(states)
-            logging.info(f"Number of nodes to analyze: {node_count}")
+            logger.info(f"Number of nodes to analyze: {node_count}")
             limit = find_time(node_count)
 
             for move in moves:
@@ -381,10 +390,10 @@ class GhostBot(Player):
             best = max(table, key=lambda move: table[move])
             score = table[best]
 
-        logging.info(f"{best} {score if isinstance(score, str) else round(score, 2)}")
-        logging.info(f"Time left before starting calculations for current move: {time_str(seconds_left)}")
-        logging.info(f"Time left now: {time_str(seconds_left - time.time() + start)}")
-        logging.debug(f"{ {str(k): round(v, 2) for k, v in table.items()} }")
+        logger.info(f"{best} {score if isinstance(score, str) else round(score, 2)}")
+        logger.info(f"Time left before starting calculations for current move: {time_str(seconds_left)}")
+        logger.info(f"Time left now: {time_str(seconds_left - time.time() + start)}")
+        logger.debug(f"{ {str(k): round(v, 2) for k, v in table.items()} }")
         return best
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
@@ -405,13 +414,13 @@ class GhostBot(Player):
             for state in self.states:
                 state.push(taken_move)
 
-        logging.info(f"Number of states after moving: {len(self.states)}")
+        logger.info(f"Number of states after moving: {len(self.states)}")
         self.turn_number += 1
         print_turn(self.turn_number)
 
     def handle_game_end(self, winner_color: Optional[Color], win_reason: Optional[WinReason],
                         game_history: GameHistory):
-        logging.info(WIN_MSG if winner_color == self.color else LOSE_MSG)
+        logger.info(WIN_MSG if winner_color == self.color else LOSE_MSG)
         self.engine.quit()
 
 CACHE = {f.__name__: {} for f in [GhostBot.stkfsh_eval, evaluate]}

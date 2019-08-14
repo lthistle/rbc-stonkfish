@@ -1,4 +1,5 @@
 *.json
+*.log
 stockfish/
 __pycache__/
 config
