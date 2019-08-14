@@ -1,7 +1,7 @@
 import os, sys, subprocess, json
 
 # number of CPU cores on the computer
-CORES = 4
+CORES = 1
 
 subprocess.run(["tmux", "kill-server"])
 subprocess.run(["git", "pull"])
