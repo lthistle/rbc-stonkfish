@@ -14,7 +14,7 @@ PIECE_VALS = {1: 1, 2: 3, 3: 3, 4: 5, 5: 9, 6: 100}
 FILTER = np.array([1]*9).reshape(3, 3)
 
 MIN_TIME = 10
-MAX_TIME = 30
+MAX_TIME = 25
 MAX_NODE_COUNT = 12000
 BOARD_LIMIT = 100
 
@@ -32,21 +32,22 @@ PASS = True
 # whether in replay enviroment, what color the replay is in (to save 50% of the time)
 REPLAY, REPLAYCOLOR = False, chess.BLACK
 
-logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.CRITICAL)
-logging.getLogger("urllib3.connectionpool").setLevel(logging.DEBUG)
+#logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.CRITICAL)
+logging.basicConfig(format="%(message)s", level=logging.CRITICAL)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
 
-#fh = logging.FileHandler("log.log")
-#formatter = logging.Formatter("%(message)s")
-#fh.setFormatter(formatter)
+fh = logging.FileHandler("log2.log")
+formatter = logging.Formatter("%(message)s")
+fh.setFormatter(formatter)
 
-#ch = logging.StreamHandler()
-#ch.setFormatter(formatter)
+ch = logging.StreamHandler()
+ch.setFormatter(formatter)
 
 logger = logging.getLogger("StonkFish")
-#logger.addHandler(fh)
+logger.addHandler(fh)
 #logger.addHandler(ch)
 logger.setLevel(logging.DEBUG)
-#logger.propagate = False
+logger.propagate = True
 
 VERBOSE = 10
 WIN_MSG = "Bot wins!"
@@ -71,7 +72,7 @@ def cache(f):
 
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-        k, param = f.__name__, args[1:] if isinstance(args[0], GhostBot) else args
+        k, param = f.__name__, args[1:] if isinstance(args[0], PriorityBot) else args
         param = " ".join(map(str, param[:NARGS.get(k, len(param))]))
 
         if param not in CACHE[k]:
@@ -170,7 +171,7 @@ def print_states(boards: List[chess.Board]) -> None:
             logger.debug(board.board_fen())
             logger.debug("\n" + "".join([UNICODE_MAP.get(x, x) for x in board.unicode()]) + "\n")
 
-class GhostBot(Player):
+class PriorityBot(Player):
 
     def __init__(self):
         self.color = None
@@ -178,7 +179,7 @@ class GhostBot(Player):
         # make sure stockfish environment variable exists
         if STOCKFISH_ENV_VAR not in os.environ:
             raise KeyError(
-                'GhostBot requires an environment variable called "{}" pointing to the Stockfish executable'.format(
+                'PriorityBot requires an environment variable called "{}" pointing to the Stockfish executable'.format(
                     STOCKFISH_ENV_VAR))
 
         # make sure there is actually a file
@@ -364,13 +365,15 @@ class GhostBot(Player):
             # weird UCI exception stuff on valid board
             try:
                 #Color flipping stuff if playing as black
-                temp = board.copy()
-                if self.color == chess.BLACK:
-                    # assert flip_board(flip_board(temp)) == temp
-                    temp = flip_board(board)
-                    temp.turn = chess.WHITE
-                temp.clear_stack()
-                r = self.engine.play(temp, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
+#                temp = board.copy()
+#                if self.color == chess.BLACK:
+#                    # assert flip_board(flip_board(temp)) == temp
+#                    temp = flip_board(board)
+#                    temp.turn = chess.WHITE
+#                temp.clear_stack()
+#                r = self.engine.play(temp, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
+                board.clear_stack()
+                r = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
                 best, score = r.move, r.info.get("score", "unknown")
                 if self.color == chess.BLACK:
                     best = chess.Move(flip_square(best.from_square), flip_square(best.to_square))
@@ -389,8 +392,9 @@ class GhostBot(Player):
             logger.info(f"Number of nodes to analyze: {node_count}")
             limit = find_time(node_count)
 
+            states, state_probs = self.prioritize_states(self.states)
             for move in moves:
-                for state in states:
+                for idx,state in enumerate(states):
                     state.turn = self.color
                     # move is invalid and equivalent to a pass
                     new_move = result(state, move)
@@ -400,7 +404,7 @@ class GhostBot(Player):
                         points = self.stkfsh_eval(state, new_move, limit)
 
                     # assuming probability is constant, may change later
-                    table[move] = table.get(move, 0) + points/len(states)
+                    table[move] = table.get(move, 0) + points*state_probs[idx]/len(states)
 
             if len(table) == 0: return
 
@@ -440,5 +444,5 @@ class GhostBot(Player):
         logger.info(WIN_MSG if winner_color == self.color else LOSE_MSG)
         self.engine.quit()
 
-CACHE = {f.__name__: {} for f in [GhostBot.stkfsh_eval, evaluate]}
-NARGS = {f.__name__: v for f, v in [(GhostBot.stkfsh_eval, 2)]}
+CACHE = {f.__name__: {} for f in [PriorityBot.stkfsh_eval, evaluate]}
+NARGS = {f.__name__: v for f, v in [(PriorityBot.stkfsh_eval, 2)]}
