@@ -14,12 +14,10 @@ PIECE_VALS = {1: 1, 2: 3, 3: 3, 4: 5, 5: 9, 6: 100}
 FILTER = np.array([1]*9).reshape(3, 3)
 
 MIN_TIME = 10
-MAX_TIME = 25
+MAX_TIME = 30
 MAX_NODE_COUNT = 12000
 BOARD_LIMIT = 100
 
-MAX_PROB = .75
-MIN_PROB = .25
 # difference between winning on this turn and winning on the next turn
 WIN = 10**4
 MATE = WIN/2
@@ -32,22 +30,21 @@ PASS = True
 # whether in replay enviroment, what color the replay is in (to save 50% of the time)
 REPLAY, REPLAYCOLOR = False, chess.BLACK
 
-#logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.CRITICAL)
-logging.basicConfig(format="%(message)s", level=logging.CRITICAL)
-logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
+logging.basicConfig(format="[%(asctime)s]%(levelname)s:%(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.CRITICAL)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.DEBUG)
 
-fh = logging.FileHandler("log2.log")
+fh = logging.FileHandler("log.log")
 formatter = logging.Formatter("%(message)s")
 fh.setFormatter(formatter)
 
 ch = logging.StreamHandler()
 ch.setFormatter(formatter)
 
-logger = logging.getLogger("StonkFish")
+logger = logging.getLogger("PriorityFish")
 logger.addHandler(fh)
-#logger.addHandler(ch)
+logger.addHandler(ch)
 logger.setLevel(logging.DEBUG)
-logger.propagate = True
+logger.propagate = False
 
 VERBOSE = 10
 WIN_MSG = "Bot wins!"
@@ -191,8 +188,10 @@ class PriorityBot(Player):
         self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
 
     @cache
-    def stkfsh_eval(self, board: chess.Board, move: chess.Move, limit: chess.engine.Limit) -> float:
+    def stkfsh_eval(self, board: chess.Board, move: chess.Move, limit: chess.engine.Limit, pov_color = None) -> float:
         """ Evaluates a move via stockfish. """
+        if pov_color is None:
+            pov_color = self.color
         temp = make_board(board, move)
 
         # # probably because of turn stuff
@@ -201,7 +200,7 @@ class PriorityBot(Player):
         temp.clear_stack()
         try:
             info = self.engine.analyse(temp, limit)
-            score = info["score"].pov(self.color)
+            score = info["score"].pov(pov_color)
         except (IndexError, ValueError):
             logger.error("Caught Stockfish error as " + str(self.color) + " (attempting to refresh then analyse again)")
             # Refresh engine and retry, should work. If not, default to 0.
@@ -210,7 +209,7 @@ class PriorityBot(Player):
             if "score" not in info:
                 logger.critical("Double failure, defaulting to 0.")
                 return 0
-            score = info["score"].pov(self.color)
+            score = info["score"].pov(pov_color)
         except Exception:
             self.engine = chess.engine.SimpleEngine.popen_uci(os.environ[STOCKFISH_ENV_VAR])
             return 0
@@ -219,20 +218,21 @@ class PriorityBot(Player):
             if score.score(mate_score=MATE) > 0:
                 return score.score(mate_score=MATE)
             else:
-                return -score.score(mate_score=MATED)
+                return score.score(mate_score=-MATED)
         return score.score()
-    
-    def prioritize_states(self, states):
-        states = sorted(states, key=lambda board: self.stkfsh_eval(set_turn(board, self.color), None, chess.engine.Limit(depth=1)))
-        #Give states probabilities ranging from 25% (lowest) to 75% (highest)
-        #As of now, probabilities are distributed linearly
-        probs = []
-        diff = (MAX_PROB - MIN_PROB)/len(states)
-        prob = MAX_PROB
-        for state in states:
-            probs.append(prob)
-            prob -= diff
-        return states, probs
+
+    def find_top(self, board, limit, turn=None):
+        print("Finding top")
+        if turn is not None:
+            board = set_turn(board, turn)
+        ranking = []
+        for move in get_moves(board):
+            score = self.stkfsh_eval(board, move, limit, self.opponent_color)
+            ranking.append((move,score))
+
+        #Sort by score
+        ranking = list(reversed(sorted(ranking, key = lambda val: val[1])))
+        return ranking
 
     def remove_boards(self, use_stockfish: bool=False) -> List[chess.Board]:
         """ If there are too many boards to check in a reasonable amount of time, check the most 'at-risk'. """
@@ -251,12 +251,11 @@ class PriorityBot(Player):
                 sort_list.append((b_score, x))
                 #revert back to proper player's turn
                 board_to_eval.turn = self.color
-
+            sort_list.sort()
             logger.warning(f"Analyzing the {BOARD_LIMIT} most at-risk boards")
+
             if use_stockfish:
-                sort_list = sorted(sort_list, key=lambda board: self.stkfsh_eval(set_turn(board, self.opponent_color), None, chess.engine.Limit(depth=0)))
-            else:
-                sort_list.sort()
+                return sorted(self.states, key=lambda board: self.stkfsh_eval(set_turn(board, self.opponent_color), None, chess.engine.Limit(depth=0)))
             return [self.states[sort_list[x][1]] for x in range(BOARD_LIMIT)]
 
         return self.states
@@ -276,6 +275,7 @@ class PriorityBot(Player):
 
         new_states = []
         states_set = set()
+        self.before_handled = [state.copy() for state in self.states]
         for state in self.states:
             state.turn = self.opponent_color
 
@@ -306,20 +306,39 @@ class PriorityBot(Player):
 
     def choose_sense(self, sense_actions: List[Square], move_actions: List[chess.Move], seconds_left: float) -> Optional[Square]:
         expected = np.zeros((64,))
-        states, state_probs = self.prioritize_states(self.states)
-        
+        poss = []
+#        weights = [1/(i+1) for i in range(10)]
+        priority_time = 5
+        print(len(self.before_handled))
+        #Approx 20 moves per state
+        limit = chess.engine.Limit(time=priority_time/(len(self.before_handled*20)))
+        board_set = set([str(i) for i in self.states])
+        for state in self.before_handled:
+            state.turn = self.opponent_color
+            ranking = self.find_top(state, limit, self.opponent_color)
+            print(ranking)
+            top5 = ranking[:5]
+            for move, score in top5:
+                new_board = make_board(state, move)
+                # Not a possible board
+                if str(new_board) not in board_set:
+                    continue
+                poss.append(new_board)
+
         for square in range(64):
             table = {}
-            for idx,state in enumerate(states):
+            for state in poss:
                 piece = state.piece_at(square)
                 if piece is None or piece.color == self.opponent_color:
                     typ = piece.piece_type if piece is not None else None
-                    table[typ] = table.get(typ, 0) + 1*state_probs[idx]
+                    table[typ] = table.get(typ, 0) + 1
 
             for piece in table:
-                expected[square] += table[piece]*(len(states) - table[piece])/len(states)
+                expected[square] += table[piece]*(len(self.states) - table[piece])/len(self.states)
 
-        return np.argmax(scipy.signal.convolve2d(expected.reshape(8, 8), FILTER)[1:-1, 1:-1]).item()
+        sensing_location = np.argmax(scipy.signal.convolve2d(expected.reshape(8, 8), FILTER)[1:-1, 1:-1]).item()
+        print(sensing_location)
+        return sensing_location
 
     def handle_sense_result(self, sense_result: List[Tuple[Square, Optional[chess.Piece]]]):
         confirmed_states = []
@@ -365,15 +384,13 @@ class PriorityBot(Player):
             # weird UCI exception stuff on valid board
             try:
                 #Color flipping stuff if playing as black
-#                temp = board.copy()
-#                if self.color == chess.BLACK:
-#                    # assert flip_board(flip_board(temp)) == temp
-#                    temp = flip_board(board)
-#                    temp.turn = chess.WHITE
-#                temp.clear_stack()
-#                r = self.engine.play(temp, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
-                board.clear_stack()
-                r = self.engine.play(board, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
+                temp = board.copy()
+                if self.color == chess.BLACK:
+                    # assert flip_board(flip_board(temp)) == temp
+                    temp = flip_board(board)
+                    temp.turn = chess.WHITE
+                temp.clear_stack()
+                r = self.engine.play(temp, chess.engine.Limit(time=(MIN_TIME + MAX_TIME)/2))
                 best, score = r.move, r.info.get("score", "unknown")
                 if self.color == chess.BLACK:
                     best = chess.Move(flip_square(best.from_square), flip_square(best.to_square))
@@ -392,9 +409,8 @@ class PriorityBot(Player):
             logger.info(f"Number of nodes to analyze: {node_count}")
             limit = find_time(node_count)
 
-            states, state_probs = self.prioritize_states(self.states)
             for move in moves:
-                for idx,state in enumerate(states):
+                for state in states:
                     state.turn = self.color
                     # move is invalid and equivalent to a pass
                     new_move = result(state, move)
@@ -404,7 +420,7 @@ class PriorityBot(Player):
                         points = self.stkfsh_eval(state, new_move, limit)
 
                     # assuming probability is constant, may change later
-                    table[move] = table.get(move, 0) + points*state_probs[idx]/len(states)
+                    table[move] = table.get(move, 0) + points/len(states)
 
             if len(table) == 0: return
 
