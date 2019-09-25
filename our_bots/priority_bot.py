@@ -174,6 +174,7 @@ class PriorityBot(Player):
         self.color = None
         self.states = []
         # make sure stockfish environment variable exists
+        os.environ[STOCKFISH_ENV_VAR] = '../stockfish-10-linux/Linux/stockfish_10_x64'
         if STOCKFISH_ENV_VAR not in os.environ:
             raise KeyError(
                 'PriorityBot requires an environment variable called "{}" pointing to the Stockfish executable'.format(
