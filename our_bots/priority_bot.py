@@ -223,7 +223,6 @@ class PriorityBot(Player):
         return score.score()
 
     def find_top(self, board, limit, turn=None):
-        print("Finding top")
         if turn is not None:
             board = set_turn(board, turn)
         ranking = []
@@ -310,14 +309,13 @@ class PriorityBot(Player):
         poss = []
 #        weights = [1/(i+1) for i in range(10)]
         priority_time = 5
-        print(len(self.before_handled))
+        print("Before handled", len(self.before_handled))
         #Approx 20 moves per state
         limit = chess.engine.Limit(time=priority_time/(len(self.before_handled*20)))
         board_set = set([str(i) for i in self.states])
         for state in self.before_handled:
             state.turn = self.opponent_color
             ranking = self.find_top(state, limit, self.opponent_color)
-            print(ranking)
             top5 = ranking[:5]
             for move, score in top5:
                 new_board = make_board(state, move)
@@ -338,7 +336,7 @@ class PriorityBot(Player):
                 expected[square] += table[piece]*(len(self.states) - table[piece])/len(self.states)
 
         sensing_location = np.argmax(scipy.signal.convolve2d(expected.reshape(8, 8), FILTER)[1:-1, 1:-1]).item()
-        print(sensing_location)
+        print("Sensing at", sensing_location)
         return sensing_location
 
     def handle_sense_result(self, sense_result: List[Tuple[Square, Optional[chess.Piece]]]):
