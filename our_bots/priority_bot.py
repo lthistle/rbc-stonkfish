@@ -166,7 +166,7 @@ def print_states(boards: List[chess.Board]) -> None:
     if len(boards) < VERBOSE:
         for board in boards:
             logger.debug(board.board_fen())
-            logger.debug("\n" + "".join([UNICODE_MAP.get(x, x) for x in board.unicode()]) + "\n")
+            logger.debug("\n" + str(board) + "\n")
 
 class PriorityBot(Player):
 
@@ -222,12 +222,21 @@ class PriorityBot(Player):
                 return score.score(mate_score=-MATED)
         return score.score()
 
-    def find_top(self, board, limit, turn=None):
+    def find_top(self, board, limit, turn=None, board_set = None):
         if turn is not None:
             board = set_turn(board, turn)
         ranking = []
+        #print("Possible")
+        #print(*[i for i in board_set])
+        #print("Actual")
         for move in get_moves(board):
+#            print(make_board(board, move).fen())
+            if board_set is not None:
+                if make_board(board, move).fen() not in board_set:
+                    continue
+        #    print("Not skipping")
             score = self.stkfsh_eval(board, move, limit, self.opponent_color)
+        #    print(score)
             ranking.append((move,score))
 
         #Sort by score
@@ -305,20 +314,29 @@ class PriorityBot(Player):
         print_turn(self.turn_number)
 
     def choose_sense(self, sense_actions: List[Square], move_actions: List[chess.Move], seconds_left: float) -> Optional[Square]:
+        start_time = time.time()
         expected = np.zeros((64,))
         poss = []
 #        weights = [1/(i+1) for i in range(10)]
         priority_time = 5
         print("Before handled", len(self.before_handled))
         #Approx 20 moves per state
-        limit = chess.engine.Limit(time=priority_time/(len(self.before_handled*20)))
-        board_set = set([str(i) for i in self.states])
-        for state in self.before_handled:
+        limit = chess.engine.Limit(time=priority_time/len(self.states))
+        print("Sensing limit", limit)
+        board_set = set([i.fen() for i in self.states])
+        for idx,state in enumerate(self.before_handled):
+            print("Currently analyzing state", idx)
+        #    print(state)
             state.turn = self.opponent_color
-            ranking = self.find_top(state, limit, self.opponent_color)
+            ranking = self.find_top(state, limit, self.opponent_color, board_set)
             top5 = ranking[:5]
+#            for move,score in ranking:
+#                new_board = make_board(state, move)
+#                print(new_board)
+        #    print(state, ranking)
             for move, score in top5:
                 new_board = make_board(state, move)
+                #print(new_board)
                 # Not a possible board
                 if str(new_board) not in board_set:
                     continue
@@ -336,7 +354,8 @@ class PriorityBot(Player):
                 expected[square] += table[piece]*(len(self.states) - table[piece])/len(self.states)
 
         sensing_location = np.argmax(scipy.signal.convolve2d(expected.reshape(8, 8), FILTER)[1:-1, 1:-1]).item()
-        print("Sensing at", sensing_location)
+        print("Sensing at", sensing_location % 8, sensing_location // 8)
+        print("Time left before and after sensing", seconds_left / 60, (seconds_left - (time.time()-start_time)) / 60)
         return sensing_location
 
     def handle_sense_result(self, sense_result: List[Tuple[Square, Optional[chess.Piece]]]):

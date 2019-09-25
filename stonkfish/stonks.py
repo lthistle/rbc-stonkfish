@@ -166,13 +166,15 @@ def print_states(boards: List[chess.Board]) -> None:
     if len(boards) < VERBOSE:
         for board in boards:
             logger.debug(board.board_fen())
-            logger.debug("\n" + "".join([UNICODE_MAP.get(x, x) for x in board.unicode()]) + "\n")
+            logger.debug("\n" + str(board) + "\n")
+#            logger.debug("\n" + "".join([UNICODE_MAP.get(x, x) for x in board.unicode()]) + "\n")
 
 class GhostBot(Player):
 
     def __init__(self):
         self.color = None
         self.states = []
+        os.environ[STOCKFISH_ENV_VAR] = '../stockfish-10-linux/Linux/stockfish_10_x64'
         # make sure stockfish environment variable exists
         if STOCKFISH_ENV_VAR not in os.environ:
             raise KeyError(
@@ -181,6 +183,7 @@ class GhostBot(Player):
 
         # make sure there is actually a file
         stockfish_path = os.environ[STOCKFISH_ENV_VAR]
+#        stockfish_path = '../stockfish-10-linux/Linux/stockfish_10_x64'
         if not os.path.exists(stockfish_path):
             raise ValueError('No stockfish executable found at "{}"'.format(stockfish_path))
 
