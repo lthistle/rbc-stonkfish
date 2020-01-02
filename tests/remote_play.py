@@ -20,7 +20,7 @@ def main():
 
     # auth = ask_for_auth()
     # don't make repo public
-    auth = ("stonkfish", "tj.rbc2021Gang")
+    auth = ("stonkfish", "[redacted]")
 
     server = RBCServer(args.server_url, auth)
 

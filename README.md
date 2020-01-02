@@ -32,7 +32,7 @@ export STOCKFISH_EXECUTABLE=/path_to_stockfish
 "A" bot 
 
  - Username: StonkFish
- - Password: "tj.rbc2021Gang"
+ - Password: [redacted]
  - Path: ~/Programs/rbc-stonkfish/our_bots/ghost_bot.py
  - tmux session: ras1
  - Computers: 
@@ -44,7 +44,7 @@ export STOCKFISH_EXECUTABLE=/path_to_stockfish
 "B" bot
 
  - Username: HestiaBestia
- - Password: "{&aH}BhW}Xn;9MRvjMA`D6H'/"
+ - Password: [redacted]
  - Path: ~/Programs/rbc-stonkfish/our_bots/b_bot.py
  - tmux session: ras2
  - Computers: 
@@ -56,7 +56,7 @@ export STOCKFISH_EXECUTABLE=/path_to_stockfish
 "C" bot
 
 - Username: StonkFishv2
-- Password: "tj.rbc2021Gang"
+- Password: [redacted]
 
 All of the CSL computers have roughly the same specifications:
  - CPU(s): 4
